@@ -121,6 +121,16 @@ func (s *ServerSelector) CheckLatency(link string) (time.Duration, error) {
 
 // SelectBest selects the best server from a list of links based on latency
 func (s *ServerSelector) SelectBest(links []string) (*ServerInfo, error) {
+	servers, err := s.SelectAllByLatency(links)
+	if err != nil {
+		return nil, err
+	}
+
+	return servers[0], nil
+}
+
+// SelectAllByLatency selects and sorts all available servers by latency
+func (s *ServerSelector) SelectAllByLatency(links []string) ([]*ServerInfo, error) {
 	if len(links) == 0 {
 		return nil, fmt.Errorf("no links provided")
 	}
@@ -181,11 +191,9 @@ func (s *ServerSelector) SelectBest(links []string) (*ServerInfo, error) {
 		return available[i].Latency < available[j].Latency
 	})
 
-	best := available[0]
-	s.logger.Info("Selected best server", "host", best.Host, "port", best.Port,
-		"latency", best.Latency, "rank", fmt.Sprintf("1/%d", len(available)))
+	s.logger.Info("Found available servers", "total", len(available), "sorted_by", "latency")
 
-	return best, nil
+	return available, nil
 }
 
 // SelectBestFromURL fetches links from URL and selects the best one

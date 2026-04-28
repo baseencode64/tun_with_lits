@@ -1,50 +1,26 @@
 package main
 
+import (
+	"context"
+	"fmt"
+	"log"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
->>>>>>> 8374170 (feat: add automatic server selection from raw VLESS lists)
 
 	"github.com/goxray/tun/pkg/client"
 )
 
-<<<<<<< HEAD
-var cmdArgsErr = `ERROR: no config_link provided
-usage: %s <config_url>
-  - config_url - xray connection link, like "vless://example..."
 var cmdArgsErr = `ERROR: no config provided
 usage: %s <config_url_or_link>
   - config_url - xray connection link, like "vless://example..."
   - or raw list URL: --from-raw <https://example.com/links.txt>
-=======
-	"time"
->>>>>>> 8374170 (feat: add automatic server selection from raw VLESS lists)
-
-	"github.com/goxray/tun/pkg/client"
-)
-
-<<<<<<< HEAD
-var cmdArgsErr = `ERROR: no config_link provided
-usage: %s <config_url>
-  - config_url - xray connection link, like "vless://example..."
-=======
-var cmdArgsErr = `ERROR: no config provided
-usage: %s <config_url_or_link>
-  - config_url - xray connection link, like "vless://example..."
-  - or raw list URL: --from-raw <https://example.com/links.txt>
->>>>>>> 8374170 (feat: add automatic server selection from raw VLESS lists)
   - or set GOXRAY_CONFIG_URL env var
 `
 
 func main() {
-<<<<<<< HEAD
-	// Get connection link from first cmd argument or env var.
-	var clientLink string
-	if len(os.Args[1:]) > 0 {
-		clientLink = os.Args[1]
-	} else {
-		clientLink = os.Getenv("GOXRAY_CONFIG_URL")
-	}
-	if clientLink == "" {
-=======
 	// Get connection link from cmd arguments
 	var clientLink string
 	var fromRaw bool
@@ -67,7 +43,6 @@ func main() {
 	}
 
 	if clientLink == "" && !fromRaw {
->>>>>>> 8374170 (feat: add automatic server selection from raw VLESS lists)
 		fmt.Printf(cmdArgsErr, os.Args[0])
 		os.Exit(0)
 	}
@@ -87,31 +62,46 @@ func main() {
 		log.Fatal(err)
 	}
 
-<<<<<<< HEAD
-=======
-	// If using raw URL, fetch and select best server
+	// If using raw URL, fetch and select servers with fallback support
 	if fromRaw {
 		slog.Info("Fetching server list from raw URL", "url", rawURL)
 
 		loggerAdapter := client.NewSlogAdapter(logger)
 		selector := client.NewServerSelector(loggerAdapter, 5*time.Second, 10)
-		best, err := selector.SelectBestFromURL(rawURL)
-		if err != nil {
-			log.Fatalf("Failed to select server: %v", err)
+		
+		// Fetch all available servers sorted by latency
+		links, fetchErr := selector.FetchRawLinks(rawURL)
+		if fetchErr != nil {
+			log.Fatalf("Failed to fetch links: %v", fetchErr)
 		}
 
-		clientLink = best.Link
-		slog.Info("Selected optimal server", "host", best.Host, "port", best.Port, "latency", best.Latency)
+		servers, selectErr := selector.SelectAllByLatency(links)
+		if selectErr != nil {
+			log.Fatalf("Failed to select servers: %v", selectErr)
+		}
+
+		// Create VPN connector with fallback support
+		connector := client.NewVPNConnector(vpn, selector, logger)
+		
+		// Show connection report
+		report := connector.GetConnectionReport(servers)
+		slog.Info("Server selection results:\n" + report)
+
+		// Connect with automatic fallback
+		slog.Info("Attempting VPN connection with fallback support", "servers_count", len(servers))
+		if connErr := connector.ConnectWithFallback(servers); connErr != nil {
+			log.Fatalf("Failed to connect: %v", connErr)
+		}
+	} else {
+		// Direct connection mode
+		slog.Info("Connecting to VPN server")
+		err = vpn.Connect(clientLink)
+		if err != nil {
+			log.Fatal(err)
+		}
+		slog.Info("Connected to VPN server")
 	}
 
->>>>>>> 8374170 (feat: add automatic server selection from raw VLESS lists)
-	slog.Info("Connecting to VPN server")
-	err = vpn.Connect(clientLink)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	slog.Info("Connected to VPN server")
 	<-sigterm
 	slog.Info("Received term signal, disconnecting...")
 	if err = vpn.Disconnect(context.Background()); err != nil {

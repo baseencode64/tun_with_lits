@@ -17,23 +17,6 @@ type Logger interface {
 	Error(msg string, keysAndValues ...interface{})
 }
 
->>>>>>> 8374170 (feat: add automatic server selection from raw VLESS lists)
-// Logger interface for structured logging
-type Logger interface {
-	Debug(msg string, keysAndValues ...interface{})
-	Info(msg string, keysAndValues ...interface{})
-	Error(msg string, keysAndValues ...interface{})
-}
-
-=======
-// Logger interface for structured logging
-type Logger interface {
-	Debug(msg string, keysAndValues ...interface{})
-	Info(msg string, keysAndValues ...interface{})
-	Error(msg string, keysAndValues ...interface{})
-}
-
->>>>>>> 8374170 (feat: add automatic server selection from raw VLESS lists)
 type pipe interface {
 	Copy(ctx context.Context, pipe io.ReadWriteCloser, socks5 string) error
 }
