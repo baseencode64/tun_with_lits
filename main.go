@@ -80,20 +80,36 @@ func main() {
 			log.Fatalf("Failed to select servers: %v", selectErr)
 		}
 
-		// Create VPN connector with fallback support
+		// Create VPN connector with health monitoring and fallback support
 		connector := client.NewVPNConnector(vpn, selector, logger)
+		defer connector.Stop() // Ensure cleanup on exit
 		
 		// Show connection report
 		report := connector.GetConnectionReport(servers)
 		slog.Info("Server selection results:\n" + report)
 
-		// Connect with automatic fallback
+		// Connect with automatic fallback and health monitoring
 		slog.Info("Attempting VPN connection with fallback support", "servers_count", len(servers))
 		if connErr := connector.ConnectWithFallback(servers); connErr != nil {
 			log.Fatalf("Failed to connect: %v", connErr)
 		}
+
+		// Log health status periodically
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					status := connector.GetHealthStatus()
+					slog.Info("VPN Health Status", "status", status)
+				case <-sigterm:
+					return
+				}
+			}
+		}()
 	} else {
-		// Direct connection mode
+		// Direct connection mode (no health monitoring)
 		slog.Info("Connecting to VPN server")
 		err = vpn.Connect(clientLink)
 		if err != nil {
