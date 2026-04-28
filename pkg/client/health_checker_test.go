@@ -28,9 +28,8 @@ func TestHealthChecker_StartStop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	failedOver := false
 	onUnhealthy := func() {
-		failedOver = true
+		t.Log("Failover callback triggered")
 	}
 
 	// Start with invalid server - should fail quickly
