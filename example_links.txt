@@ -1,0 +1,10 @@
+# Пример raw списка VLESS серверов
+# Каждая строка должна содержать один VLESS URI
+# Строки начинающиеся с # игнорируются
+
+vless://uuid-example-1@server1.example.com:443?type=ws&security=tls&host=server1.example.com
+vless://uuid-example-2@server2.example.com:443?type=ws&security=tls&host=server2.example.com
+vless://uuid-example-3@server3.example.com:8080?type=tcp
+
+# Недействительные ссылки будут пропущены автоматически
+invalid-link-here
