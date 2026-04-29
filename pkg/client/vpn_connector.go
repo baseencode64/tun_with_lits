@@ -109,19 +109,29 @@ func (c *VPNConnector) performFailover() {
 		"next_host", nextServer.Host,
 		"next_port", nextServer.Port)
 
-	// Disconnect from current server
+	// Disconnect from current server (ignore errors - TUN might already be closed)
 	if err := c.client.Disconnect(c.ctx); err != nil {
-		c.logger.Warn("Failed to disconnect from unhealthy server", "error", err)
+		c.logger.Debug("Disconnect completed (with expected error)", "error", err)
 	}
+
+	// Small delay to allow cleanup
+	time.Sleep(500 * time.Millisecond)
 
 	// Try to connect to next server
 	c.logger.Info("Connecting to next server", "host", nextServer.Host, "port", nextServer.Port)
 	err := c.client.Connect(nextServer.Link)
 	if err != nil {
 		c.logger.Error("Failed to connect to next server", "error", err)
-		// Continue failover recursively
+		// Update index and try recursively (but limit recursion depth)
 		c.currentServerIndex = nextIndex
-		c.performFailover()
+		
+		// Safety check: don't recurse if we've tried all servers
+		if c.currentServerIndex < len(c.servers)-1 {
+			c.logger.Info("Attempting next server in list", "remaining", len(c.servers)-c.currentServerIndex-1)
+			go c.performFailover()
+		} else {
+			c.logger.Error("Exhausted all servers in failover")
+		}
 		return
 	}
 
