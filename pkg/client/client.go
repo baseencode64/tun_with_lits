@@ -251,7 +251,31 @@ func (c *Client) Disconnect(ctx context.Context) error {
 	}
 
 	c.stopTunnel()
-	err := errors.Join(c.xInst.Close(), c.tunnel.Close(), c.routes.Delete(c.xrayToGatewayRoute()))
+	
+	// Close components individually with nil checks to prevent panics
+	var errs []error
+	
+	if c.xInst != nil {
+		if err := c.xInst.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close xray: %w", err))
+		}
+	}
+	
+	if c.tunnel != nil {
+		if err := c.tunnel.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close tunnel: %w", err))
+		}
+	}
+	
+	// Clean up routes (ignore errors as they're not critical)
+	if routeOpts := c.xrayToGatewayRoute(); true {
+		if err := c.routes.Delete(routeOpts); err != nil {
+			// Don't treat route deletion errors as critical
+			c.cfg.Logger.Debug("route cleanup note", "error", err)
+		}
+	}
+	
+	err := errors.Join(errs...)
 
 	// Waiting till the tunnel actually done with processing connections.
 	ctx, cancel := context.WithTimeout(ctx, disconnectTimeout)

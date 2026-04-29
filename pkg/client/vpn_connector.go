@@ -101,6 +101,13 @@ func (c *VPNConnector) performFailover() {
 	}
 
 	nextIndex := c.currentServerIndex + 1
+	
+	// Check bounds
+	if nextIndex >= len(c.servers) {
+		c.logger.Error("Failed to failover - no valid next server")
+		return
+	}
+	
 	nextServer := c.servers[nextIndex]
 
 	c.logger.Info("Failing over to next server",
@@ -109,9 +116,9 @@ func (c *VPNConnector) performFailover() {
 		"next_host", nextServer.Host,
 		"next_port", nextServer.Port)
 
-	// Disconnect from current server (ignore errors - TUN might already be closed)
+	// Disconnect from current server (ignore errors during disconnect)
 	if err := c.client.Disconnect(c.ctx); err != nil {
-		c.logger.Debug("Disconnect completed (with expected error)", "error", err)
+		c.logger.Warn("Disconnect warning (continuing with failover)", "error", err)
 	}
 
 	// Small delay to allow cleanup
@@ -121,14 +128,14 @@ func (c *VPNConnector) performFailover() {
 	c.logger.Info("Connecting to next server", "host", nextServer.Host, "port", nextServer.Port)
 	err := c.client.Connect(nextServer.Link)
 	if err != nil {
-		c.logger.Error("Failed to connect to next server", "error", err)
-		// Update index and try recursively (but limit recursion depth)
+		c.logger.Error("Failed to connect to next server, trying another", "error", err, "next_index", nextIndex)
+		
+		// Update index and try recursively
 		c.currentServerIndex = nextIndex
 		
-		// Safety check: don't recurse if we've tried all servers
+		// Safety check to prevent infinite recursion
 		if c.currentServerIndex < len(c.servers)-1 {
-			c.logger.Info("Attempting next server in list", "remaining", len(c.servers)-c.currentServerIndex-1)
-			go c.performFailover()
+			c.performFailover()
 		} else {
 			c.logger.Error("Exhausted all servers in failover")
 		}
@@ -140,7 +147,9 @@ func (c *VPNConnector) performFailover() {
 		"host", nextServer.Host, "port", nextServer.Port, "index", nextIndex)
 
 	// Restart health monitoring for new server
-	c.healthChecker.Stop()
+	if c.healthChecker != nil {
+		c.healthChecker.Stop()
+	}
 	c.startHealthMonitoring(nextServer)
 }
 
