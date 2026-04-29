@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -16,8 +17,10 @@ type VPNConnector struct {
 	ctx           context.Context
 	cancelFunc    context.CancelFunc
 	
+	mu               sync.Mutex  // Protects concurrent access during failover
 	currentServerIndex int
 	servers            []*ServerInfo
+	isFailingOver      bool  // Prevents concurrent failover attempts
 }
 
 // NewVPNConnector creates a new VPN connector with fallback support
@@ -92,9 +95,27 @@ func (c *VPNConnector) startHealthMonitoring(server *ServerInfo) {
 	})
 }
 
-// performFailover switches to next available server
+// performFailover switches to next available server with proper synchronization
 func (c *VPNConnector) performFailover() {
+	// Prevent concurrent failover attempts
+	c.mu.Lock()
+	if c.isFailingOver {
+		c.logger.Warn("Failover already in progress, skipping")
+		c.mu.Unlock()
+		return
+	}
+	c.isFailingOver = true
+	c.mu.Unlock()
+	
+	defer func() {
+		c.mu.Lock()
+		c.isFailingOver = false
+		c.mu.Unlock()
+	}()
+
+	c.mu.Lock()
 	if len(c.servers) <= c.currentServerIndex+1 {
+		c.mu.Unlock()
 		c.logger.Error("No more servers to failover to", 
 			"current_index", c.currentServerIndex, "total_servers", len(c.servers))
 		return
@@ -104,11 +125,13 @@ func (c *VPNConnector) performFailover() {
 	
 	// Check bounds
 	if nextIndex >= len(c.servers) {
+		c.mu.Unlock()
 		c.logger.Error("Failed to failover - no valid next server")
 		return
 	}
 	
 	nextServer := c.servers[nextIndex]
+	c.mu.Unlock()
 
 	c.logger.Info("Failing over to next server",
 		"from_index", c.currentServerIndex,
@@ -116,25 +139,45 @@ func (c *VPNConnector) performFailover() {
 		"next_host", nextServer.Host,
 		"next_port", nextServer.Port)
 
-	// Disconnect from current server (ignore errors during disconnect)
+	// Cancel current context to stop all ongoing operations (XRay connections, health checks)
+	if c.cancelFunc != nil {
+		c.logger.Info("Cancelling current context to stop ongoing operations")
+		c.cancelFunc()
+	}
+	
+	// Stop health checker before disconnect
+	if c.healthChecker != nil {
+		c.healthChecker.Stop()
+	}
+
+	// Disconnect from current server
 	if err := c.client.Disconnect(c.ctx); err != nil {
 		c.logger.Warn("Disconnect warning (continuing with failover)", "error", err)
 	}
 
-	// Small delay to allow cleanup
-	time.Sleep(500 * time.Millisecond)
+	// Delay to allow cleanup and prevent connection races
+	time.Sleep(1 * time.Second)
 
-	// Try to connect to next server
+	// Create new context for the new connection
+	c.mu.Lock()
+	newCtx, newCancel := context.WithCancel(context.Background())
+	c.ctx = newCtx
+	c.cancelFunc = newCancel
+	c.currentServerIndex = nextIndex
+	c.mu.Unlock()
+
+	// Try to connect to next server with new context
 	c.logger.Info("Connecting to next server", "host", nextServer.Host, "port", nextServer.Port)
 	err := c.client.Connect(nextServer.Link)
 	if err != nil {
 		c.logger.Error("Failed to connect to next server, trying another", "error", err, "next_index", nextIndex)
 		
-		// Update index and try recursively
-		c.currentServerIndex = nextIndex
+		// Update index and try recursively (with safety check)
+		c.mu.Lock()
+		safetyCheck := c.currentServerIndex < len(c.servers)-1
+		c.mu.Unlock()
 		
-		// Safety check to prevent infinite recursion
-		if c.currentServerIndex < len(c.servers)-1 {
+		if safetyCheck {
 			c.performFailover()
 		} else {
 			c.logger.Error("Exhausted all servers in failover")
@@ -142,14 +185,10 @@ func (c *VPNConnector) performFailover() {
 		return
 	}
 
-	c.currentServerIndex = nextIndex
 	c.logger.Info("Successfully failed over to next server",
 		"host", nextServer.Host, "port", nextServer.Port, "index", nextIndex)
 
-	// Restart health monitoring for new server
-	if c.healthChecker != nil {
-		c.healthChecker.Stop()
-	}
+	// Start health monitoring for new server
 	c.startHealthMonitoring(nextServer)
 }
 
