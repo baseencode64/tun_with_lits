@@ -101,6 +101,8 @@ func (c *VPNConnector) startHealthMonitoring(server *ServerInfo) {
 	if c.healthChecker != nil {
 		c.logger.Info("Stopping previous health checker before starting new one")
 		c.healthChecker.Stop()
+		// Wait a bit to ensure goroutine exits
+		time.Sleep(100 * time.Millisecond)
 		c.healthChecker = nil
 	}
 	
@@ -113,9 +115,13 @@ func (c *VPNConnector) startHealthMonitoring(server *ServerInfo) {
 	)
 
 	// Start health checks with automatic failover
+	// Use sync.Once to prevent multiple concurrent failover triggers
+	var failoverOnce sync.Once
 	c.healthChecker.Start(c.ctx, server.Host, server.Port, func() {
-		c.logger.Warn("Health check failed - initiating automatic failover")
-		go c.performFailover()
+		failoverOnce.Do(func() {
+			c.logger.Warn("Health check failed - initiating automatic failover")
+			c.performFailover()
+		})
 	})
 }
 
@@ -146,90 +152,94 @@ func (c *VPNConnector) performFailover() {
 		c.mu.Unlock()
 	}()
 
-	c.mu.Lock()
-	currentIndex := c.currentServerIndex
-	totalServers := len(c.servers)
-	
-	if totalServers <= currentIndex+1 {
-		c.mu.Unlock()
-		c.logger.Error("No more servers to failover to", 
-			"current_index", currentIndex, "total_servers", totalServers)
-		return
-	}
-
-	nextIndex := currentIndex + 1
-	
-	// Check bounds
-	if nextIndex >= totalServers {
-		c.mu.Unlock()
-		c.logger.Error("Failed to failover - no valid next server")
-		return
-	}
-	
-	nextServer := c.servers[nextIndex]
-	c.mu.Unlock()
-
-	c.logger.Info("Failing over to next server",
-		"from_index", currentIndex,
-		"to_index", nextIndex,
-		"next_host", nextServer.Host,
-		"next_port", nextServer.Port)
-	
-	// Stop health checker BEFORE disconnect to prevent stale callbacks
-	if c.healthChecker != nil {
-		c.logger.Info("Stopping old health checker")
-		c.healthChecker.Stop()
-		c.healthChecker = nil // Clear reference to allow GC
-	}
-
-	// Disconnect from current server with timeout (reduced from 30s to 5s)
-	disconnectCtx, disconnectCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer disconnectCancel()
-	
-	if err := c.client.Disconnect(disconnectCtx); err != nil {
-		c.logger.Warn("Disconnect warning (continuing with failover)", "error", err)
-	}
-
-	// Reduced delay to allow cleanup but prevent connection races
-	time.Sleep(500 * time.Millisecond)
-
-	// Create new context for the new connection
-	newCtx, newCancel := context.WithCancel(context.Background())
-	
-	c.mu.Lock()
-	c.ctx = newCtx
-	c.cancelFunc = newCancel
-	c.currentServerIndex = nextIndex
-	c.mu.Unlock()
-
-	// Try to connect to next server with NEW context (no recursion!)
-	c.logger.Info("Connecting to next server", "host", nextServer.Host, "port", nextServer.Port)
-	err := c.client.Connect(nextServer.Link)
-	if err != nil {
-		c.logger.Error("Failed to connect to next server", "error", err, "host", nextServer.Host, "port", nextServer.Port)
-		
-		// Continue trying next servers iteratively (NOT recursively!)
+	// Try to failover in a loop (NOT recursively!)
+	for {
 		c.mu.Lock()
-		remainingServers := c.currentServerIndex < len(c.servers)-1
-		c.mu.Unlock()
+		currentIndex := c.currentServerIndex
+		totalServers := len(c.servers)
 		
-		if remainingServers {
-			c.logger.Info("Trying next server in list")
-			// Small delay before next attempt
-			time.Sleep(200 * time.Millisecond)
-			// Iterative call - will check isFailingOver flag at start
-			c.performFailover()
-		} else {
-			c.logger.Error("Exhausted all servers in failover")
+		if totalServers <= currentIndex+1 {
+			c.mu.Unlock()
+			c.logger.Error("No more servers to failover to", 
+				"current_index", currentIndex, "total_servers", totalServers)
+			return
 		}
-		return
+
+		nextIndex := currentIndex + 1
+		
+		// Check bounds
+		if nextIndex >= totalServers {
+			c.mu.Unlock()
+			c.logger.Error("Failed to failover - no valid next server")
+			return
+		}
+		
+		nextServer := c.servers[nextIndex]
+		c.mu.Unlock()
+
+		c.logger.Info("Failing over to next server",
+			"from_index", currentIndex,
+			"to_index", nextIndex,
+			"next_host", nextServer.Host,
+			"next_port", nextServer.Port)
+		
+		// Stop health checker BEFORE disconnect to prevent stale callbacks
+		if c.healthChecker != nil {
+			c.logger.Info("Stopping old health checker")
+			c.healthChecker.Stop()
+			c.healthChecker = nil // Clear reference to allow GC
+		}
+
+		// Disconnect from current server with timeout (reduced from 30s to 5s)
+		disconnectCtx, disconnectCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		
+		if err := c.client.Disconnect(disconnectCtx); err != nil {
+			c.logger.Warn("Disconnect warning (continuing with failover)", "error", err)
+		}
+		disconnectCancel()
+
+		// Reduced delay to allow cleanup but prevent connection races
+		time.Sleep(500 * time.Millisecond)
+
+		// Create new context for the new connection
+		newCtx, newCancel := context.WithCancel(context.Background())
+		
+		c.mu.Lock()
+		c.ctx = newCtx
+		c.cancelFunc = newCancel
+		c.currentServerIndex = nextIndex
+		c.mu.Unlock()
+
+		// Try to connect to next server with NEW context
+		c.logger.Info("Connecting to next server", "host", nextServer.Host, "port", nextServer.Port)
+		err := c.client.Connect(nextServer.Link)
+		if err != nil {
+			c.logger.Error("Failed to connect to next server", "error", err, "host", nextServer.Host, "port", nextServer.Port)
+			
+			// Continue loop to try next server (NO RECURSION!)
+			c.mu.Lock()
+			remainingServers := c.currentServerIndex < len(c.servers)-1
+			c.mu.Unlock()
+			
+			if remainingServers {
+				c.logger.Info("Trying next server in list")
+				// Small delay before next attempt
+				time.Sleep(200 * time.Millisecond)
+				// Loop continues automatically
+				continue
+			} else {
+				c.logger.Error("Exhausted all servers in failover")
+				return
+			}
+		}
+
+		c.logger.Info("Successfully failed over to next server",
+			"host", nextServer.Host, "port", nextServer.Port, "index", nextIndex)
+
+		// Start health monitoring for new server ONLY after successful connection
+		c.startHealthMonitoring(nextServer)
+		return // Success - exit function
 	}
-
-	c.logger.Info("Successfully failed over to next server",
-		"host", nextServer.Host, "port", nextServer.Port, "index", nextIndex)
-
-	// Start health monitoring for new server ONLY after successful connection
-	c.startHealthMonitoring(nextServer)
 }
 
 // Stop stops health monitoring and cancels all operations

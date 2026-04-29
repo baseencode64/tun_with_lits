@@ -106,6 +106,9 @@ type Client struct {
 
 	tunnelStopped chan error
 	stopTunnel    func()
+	
+	mu sync.Mutex // Protects concurrent access during connect/disconnect
+	isConnected bool // Tracks connection state to prevent double operations
 }
 
 // Proxy will set up XRay inbound.
@@ -183,6 +186,17 @@ func (c *Client) InboundProxy() Proxy {
 // Connect creates a global tunnel and routes all incoming connections (or traffic specified in Config.RoutesToTUN)
 // to the VPN server via newly created defaultInboundProxy.
 func (c *Client) Connect(link string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	// Prevent double connection
+	if c.isConnected {
+		c.cfg.Logger.Warn("Already connected, disconnecting first")
+		c.mu.Unlock()
+		c.Disconnect(context.Background())
+		c.mu.Lock()
+	}
+
 	var err error
 	c.cfg.Logger.Debug("Connecting to tunnel", "cfg", c.cfg)
 
@@ -232,10 +246,18 @@ func (c *Client) Connect(link string) error {
 	ctx, c.stopTunnel = context.WithCancel(context.Background())
 	go func() {
 		wg.Done()
-		c.tunnelStopped <- c.pipe.Copy(ctx, c.tunnel, c.cfg.InboundProxy.String())
-		c.cfg.Logger.Debug("tunnel pipe closed", "err", err)
+		err := c.pipe.Copy(ctx, c.tunnel, c.cfg.InboundProxy.String())
+		select {
+		case c.tunnelStopped <- err:
+			c.cfg.Logger.Debug("tunnel pipe closed", "err", err)
+		default:
+			// Channel might be full or closed, log warning
+			c.cfg.Logger.Warn("Could not send tunnel stop signal, channel issue")
+		}
 	}()
 	wg.Wait()
+	
+	c.isConnected = true
 	c.cfg.Logger.Debug("client connected")
 
 	return nil
@@ -246,11 +268,17 @@ func (c *Client) Connect(link string) error {
 // It will block till all resources are done processing or
 // context is cancelled (method also enforces timeout of disconnectTimeout)
 func (c *Client) Disconnect(ctx context.Context) error {
-	if c.stopTunnel == nil {
-		return nil // not connected
+	c.mu.Lock()
+	
+	// Prevent double disconnect
+	if !c.isConnected {
+		c.mu.Unlock()
+		return nil // Already disconnected
 	}
-
+	
 	c.stopTunnel()
+	c.isConnected = false
+	c.mu.Unlock()
 	
 	// Close components individually with nil checks to prevent panics
 	var errs []error
@@ -287,6 +315,7 @@ func (c *Client) Disconnect(ctx context.Context) error {
 		err = errors.Join(tunErr, err)
 	case <-disconnectCtx.Done():
 		err = errors.Join(disconnectCtx.Err(), err)
+		c.cfg.Logger.Warn("Disconnect timeout, tunnel may still be running")
 	}
 
 	if err != nil {

@@ -141,10 +141,14 @@ func main() {
 				return fmt.Errorf("connect: %w", connErr)
 			}
 
+			// Create a cancellable context for monitoring goroutines
+			monitorCtx, monitorCancel := context.WithCancel(context.Background())
+			defer monitorCancel()
+
 			// Start periodic server list refresh if enabled
 			if refreshInterval > 0 {
 				slog.Info("Periodic server list refresh enabled", "interval", refreshInterval)
-				go startPeriodicRefresh(connector, selector, rawURL, refreshInterval, timeout, maxServers)
+				go startPeriodicRefresh(monitorCtx, connector, selector, rawURL, refreshInterval, timeout, maxServers)
 			}
 
 			// Monitor health status periodically
@@ -157,7 +161,10 @@ func main() {
 						status := connector.GetHealthStatus()
 						slog.Info("VPN Health Status", "status", status)
 					case <-sigterm:
+						monitorCancel() // Signal other goroutines to stop
 						return
+					case <-monitorCtx.Done():
+						return // Context cancelled (e.g., during failover)
 					}
 				}
 			}()
@@ -193,6 +200,7 @@ func main() {
 
 // startPeriodicRefresh periodically fetches new server list and updates connection
 func startPeriodicRefresh(
+	ctx context.Context,
 	currentConnector *client.VPNConnector,
 	selector *client.ServerSelector,
 	rawURL string,
@@ -203,32 +211,37 @@ func startPeriodicRefresh(
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		slog.Info("Refreshing server list from raw URL", "url", rawURL)
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("Periodic refresh stopped due to context cancellation")
+			return
+		case <-ticker.C:
+			slog.Info("Refreshing server list from raw URL", "url", rawURL)
 
-		links, err := selector.FetchRawLinks(rawURL)
-		if err != nil {
-			slog.Warn("Failed to refresh server list", "error", err)
-			continue
-		}
+			links, err := selector.FetchRawLinks(rawURL)
+			if err != nil {
+				slog.Warn("Failed to refresh server list", "error", err)
+				continue
+			}
 
-		servers, err := selector.SelectAllByLatency(links)
-		if err != nil {
-			slog.Warn("Failed to select servers from refreshed list", "error", err)
-			// Explicitly clear old data to allow GC
+			servers, err := selector.SelectAllByLatency(links)
+			if err != nil {
+				slog.Warn("Failed to select servers from refreshed list", "error", err)
+				links = nil // Explicitly clear old data to allow GC
+				continue
+			}
+
+			slog.Info("Server list refreshed successfully", "total_servers", len(servers), "new_servers_available", len(servers))
+
+			// Note: Current implementation logs the update but doesn't force reconnect
+			// The health monitoring system will automatically switch to better servers if needed
+			report := currentConnector.GetConnectionReport(servers)
+			slog.Info("Updated server list:\n" + report)
+			
+			// Clear old data to prevent memory leaks - only keep current server list
 			links = nil
-			continue
+			servers = nil
 		}
-
-		slog.Info("Server list refreshed successfully", "total_servers", len(servers), "new_servers_available", len(servers))
-
-		// Note: Current implementation logs the update but doesn't force reconnect
-		// The health monitoring system will automatically switch to better servers if needed
-		report := currentConnector.GetConnectionReport(servers)
-		slog.Info("Updated server list:\n" + report)
-		
-		// Clear old data to prevent memory leaks - only keep current server list
-		links = nil
-		servers = nil
 	}
 }
