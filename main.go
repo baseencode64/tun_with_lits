@@ -215,6 +215,8 @@ func startPeriodicRefresh(
 		servers, err := selector.SelectAllByLatency(links)
 		if err != nil {
 			slog.Warn("Failed to select servers from refreshed list", "error", err)
+			// Explicitly clear old data to allow GC
+			links = nil
 			continue
 		}
 
@@ -224,5 +226,9 @@ func startPeriodicRefresh(
 		// The health monitoring system will automatically switch to better servers if needed
 		report := currentConnector.GetConnectionReport(servers)
 		slog.Info("Updated server list:\n" + report)
+		
+		// Clear old data to prevent memory leaks - only keep current server list
+		links = nil
+		servers = nil
 	}
 }

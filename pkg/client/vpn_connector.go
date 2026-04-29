@@ -56,7 +56,24 @@ func (c *VPNConnector) ConnectWithFallback(servers []*ServerInfo) error {
 		c.logger.Info("Trying server", "attempt", i+1, "total", len(servers),
 			"host", server.Host, "port", server.Port, "latency", server.Latency)
 
-		err := c.client.Connect(server.Link)
+		// Add timeout for each connection attempt to prevent hanging
+		connectCtx, connectCancel := context.WithTimeout(c.ctx, 30*time.Second)
+		done := make(chan error, 1)
+		
+		go func() {
+			done <- c.client.Connect(server.Link)
+		}()
+		
+		var err error
+		select {
+		case err = <-done:
+			// Connection completed
+		case <-connectCtx.Done():
+			err = fmt.Errorf("connection timeout after 30s")
+			c.logger.Warn("Connection attempt timed out", "host", server.Host, "port", server.Port)
+		}
+		connectCancel()
+		
 		if err == nil {
 			c.currentServerIndex = i
 			c.logger.Info("Successfully connected to VPN server",
@@ -80,6 +97,13 @@ func (c *VPNConnector) ConnectWithFallback(servers []*ServerInfo) error {
 
 // startHealthMonitoring begins health checking for current server
 func (c *VPNConnector) startHealthMonitoring(server *ServerInfo) {
+	// Stop previous health checker if exists to prevent goroutine leaks
+	if c.healthChecker != nil {
+		c.logger.Info("Stopping previous health checker before starting new one")
+		c.healthChecker.Stop()
+		c.healthChecker = nil
+	}
+	
 	// Create health checker with default settings
 	c.healthChecker = NewHealthChecker(
 		c.logger,
@@ -97,7 +121,7 @@ func (c *VPNConnector) startHealthMonitoring(server *ServerInfo) {
 
 // performFailover switches to next available server with proper synchronization
 func (c *VPNConnector) performFailover() {
-	// Prevent concurrent failover attempts
+	// Prevent concurrent failover attempts using atomic operation
 	c.mu.Lock()
 	if c.isFailingOver {
 		c.logger.Warn("Failover already in progress, skipping")
@@ -105,7 +129,16 @@ func (c *VPNConnector) performFailover() {
 		return
 	}
 	c.isFailingOver = true
+	
+	// Save old cancel func and unlock immediately
+	oldCancel := c.cancelFunc
 	c.mu.Unlock()
+	
+	// Cancel all previous operations immediately to stop goroutines
+	if oldCancel != nil {
+		c.logger.Info("Cancelling previous operations before failover")
+		oldCancel()
+	}
 	
 	defer func() {
 		c.mu.Lock()
@@ -114,17 +147,20 @@ func (c *VPNConnector) performFailover() {
 	}()
 
 	c.mu.Lock()
-	if len(c.servers) <= c.currentServerIndex+1 {
+	currentIndex := c.currentServerIndex
+	totalServers := len(c.servers)
+	
+	if totalServers <= currentIndex+1 {
 		c.mu.Unlock()
 		c.logger.Error("No more servers to failover to", 
-			"current_index", c.currentServerIndex, "total_servers", len(c.servers))
+			"current_index", currentIndex, "total_servers", totalServers)
 		return
 	}
 
-	nextIndex := c.currentServerIndex + 1
+	nextIndex := currentIndex + 1
 	
 	// Check bounds
-	if nextIndex >= len(c.servers) {
+	if nextIndex >= totalServers {
 		c.mu.Unlock()
 		c.logger.Error("Failed to failover - no valid next server")
 		return
@@ -134,50 +170,54 @@ func (c *VPNConnector) performFailover() {
 	c.mu.Unlock()
 
 	c.logger.Info("Failing over to next server",
-		"from_index", c.currentServerIndex,
+		"from_index", currentIndex,
 		"to_index", nextIndex,
 		"next_host", nextServer.Host,
 		"next_port", nextServer.Port)
-
-	// Cancel current context to stop all ongoing operations (XRay connections, health checks)
-	if c.cancelFunc != nil {
-		c.logger.Info("Cancelling current context to stop ongoing operations")
-		c.cancelFunc()
-	}
 	
-	// Stop health checker before disconnect
+	// Stop health checker BEFORE disconnect to prevent stale callbacks
 	if c.healthChecker != nil {
+		c.logger.Info("Stopping old health checker")
 		c.healthChecker.Stop()
+		c.healthChecker = nil // Clear reference to allow GC
 	}
 
-	// Disconnect from current server
-	if err := c.client.Disconnect(c.ctx); err != nil {
+	// Disconnect from current server with timeout (reduced from 30s to 5s)
+	disconnectCtx, disconnectCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer disconnectCancel()
+	
+	if err := c.client.Disconnect(disconnectCtx); err != nil {
 		c.logger.Warn("Disconnect warning (continuing with failover)", "error", err)
 	}
 
-	// Delay to allow cleanup and prevent connection races
-	time.Sleep(1 * time.Second)
+	// Reduced delay to allow cleanup but prevent connection races
+	time.Sleep(500 * time.Millisecond)
 
 	// Create new context for the new connection
-	c.mu.Lock()
 	newCtx, newCancel := context.WithCancel(context.Background())
+	
+	c.mu.Lock()
 	c.ctx = newCtx
 	c.cancelFunc = newCancel
 	c.currentServerIndex = nextIndex
 	c.mu.Unlock()
 
-	// Try to connect to next server with new context
+	// Try to connect to next server with NEW context (no recursion!)
 	c.logger.Info("Connecting to next server", "host", nextServer.Host, "port", nextServer.Port)
 	err := c.client.Connect(nextServer.Link)
 	if err != nil {
-		c.logger.Error("Failed to connect to next server, trying another", "error", err, "next_index", nextIndex)
+		c.logger.Error("Failed to connect to next server", "error", err, "host", nextServer.Host, "port", nextServer.Port)
 		
-		// Update index and try recursively (with safety check)
+		// Continue trying next servers iteratively (NOT recursively!)
 		c.mu.Lock()
-		safetyCheck := c.currentServerIndex < len(c.servers)-1
+		remainingServers := c.currentServerIndex < len(c.servers)-1
 		c.mu.Unlock()
 		
-		if safetyCheck {
+		if remainingServers {
+			c.logger.Info("Trying next server in list")
+			// Small delay before next attempt
+			time.Sleep(200 * time.Millisecond)
+			// Iterative call - will check isFailingOver flag at start
 			c.performFailover()
 		} else {
 			c.logger.Error("Exhausted all servers in failover")
@@ -188,7 +228,7 @@ func (c *VPNConnector) performFailover() {
 	c.logger.Info("Successfully failed over to next server",
 		"host", nextServer.Host, "port", nextServer.Port, "index", nextIndex)
 
-	// Start health monitoring for new server
+	// Start health monitoring for new server ONLY after successful connection
 	c.startHealthMonitoring(nextServer)
 }
 

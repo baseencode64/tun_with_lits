@@ -278,13 +278,15 @@ func (c *Client) Disconnect(ctx context.Context) error {
 	err := errors.Join(errs...)
 
 	// Waiting till the tunnel actually done with processing connections.
-	ctx, cancel := context.WithTimeout(ctx, disconnectTimeout)
-	defer cancel()
+	// Use a fresh context to ensure cleanup completes even if passed context is cancelled
+	disconnectCtx, disconnectCancel := context.WithTimeout(context.Background(), disconnectTimeout)
+	defer disconnectCancel()
+	
 	select {
 	case tunErr := <-c.tunnelStopped:
 		err = errors.Join(tunErr, err)
-	case <-ctx.Done():
-		err = errors.Join(ctx.Err(), err)
+	case <-disconnectCtx.Done():
+		err = errors.Join(disconnectCtx.Err(), err)
 	}
 
 	if err != nil {

@@ -43,9 +43,18 @@ func (h *HealthChecker) Start(ctx context.Context, serverHost string, serverPort
 	go h.healthCheckLoop(ctx, serverHost, serverPort, onUnhealthy)
 }
 
-// Stop stops health checking
+// Stop stops health checking with proper synchronization
 func (h *HealthChecker) Stop() {
-	close(h.stopChan)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	
+	// Close stopChan only once to prevent panic
+	select {
+	case <-h.stopChan:
+		// Already closed
+	default:
+		close(h.stopChan)
+	}
 }
 
 // IsHealthy returns current health status
@@ -55,7 +64,7 @@ func (h *HealthChecker) IsHealthy() bool {
 	return h.isHealthy
 }
 
-// healthCheckLoop runs periodic health checks
+// healthCheckLoop runs periodic health checks with proper context handling
 func (h *HealthChecker) healthCheckLoop(ctx context.Context, host string, port string, onUnhealthy func()) {
 	ticker := time.NewTicker(h.checkInterval)
 	defer ticker.Stop()
@@ -69,6 +78,17 @@ func (h *HealthChecker) healthCheckLoop(ctx context.Context, host string, port s
 			h.logger.Info("Health check stopped")
 			return
 		case <-ticker.C:
+			// Check if we should still proceed
+			select {
+			case <-ctx.Done():
+				h.logger.Info("Health check cancelled before execution")
+				return
+			case <-h.stopChan:
+				h.logger.Info("Health check stopped before execution")
+				return
+			default:
+			}
+			
 			if err := h.checkHealth(host, port); err != nil {
 				h.handleUnhealthy(err, onUnhealthy)
 			} else {
