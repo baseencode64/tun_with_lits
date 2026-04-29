@@ -143,7 +143,12 @@ func main() {
 
 			// Create a cancellable context for monitoring goroutines
 			monitorCtx, monitorCancel := context.WithCancel(context.Background())
-			defer monitorCancel()
+			
+			// Ensure cleanup happens on function exit
+			defer func() {
+				slog.Info("Stopping all monitoring goroutines")
+				monitorCancel()
+			}()
 
 			// Start periodic server list refresh if enabled
 			if refreshInterval > 0 {
@@ -164,13 +169,14 @@ func main() {
 						monitorCancel() // Signal other goroutines to stop
 						return
 					case <-monitorCtx.Done():
-						return // Context cancelled (e.g., during failover)
+						return // Context cancelled (e.g., during shutdown)
 					}
 				}
 			}()
 
 			// Wait for termination signal
 			<-sigterm
+			slog.Info("Termination signal received, shutting down...")
 			return nil
 		}
 

@@ -147,6 +147,7 @@ func (h *HealthChecker) handleUnhealthy(err error, onUnhealthy func()) {
 		h.isHealthy = false
 		h.mu.Unlock()
 
+		// Call onUnhealthy OUTSIDE the lock to prevent deadlock
 		if wasHealthy && onUnhealthy != nil {
 			h.logger.Info("Triggering failover to next server")
 			onUnhealthy()

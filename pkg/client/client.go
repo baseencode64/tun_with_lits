@@ -276,8 +276,13 @@ func (c *Client) Disconnect(ctx context.Context) error {
 		return nil // Already disconnected
 	}
 	
-	c.stopTunnel()
+	// Mark as disconnected immediately to prevent new operations
 	c.isConnected = false
+	
+	// Cancel tunnel context FIRST to signal goroutine to stop
+	if c.stopTunnel != nil {
+		c.stopTunnel()
+	}
 	c.mu.Unlock()
 	
 	// Close components individually with nil checks to prevent panics
@@ -310,22 +315,23 @@ func (c *Client) Disconnect(ctx context.Context) error {
 	disconnectCtx, disconnectCancel := context.WithTimeout(context.Background(), disconnectTimeout)
 	defer disconnectCancel()
 	
+	// Wait for goroutine to finish with timeout
 	select {
 	case tunErr := <-c.tunnelStopped:
 		err = errors.Join(tunErr, err)
+		c.cfg.Logger.Debug("tunnel goroutine finished")
 	case <-disconnectCtx.Done():
 		err = errors.Join(disconnectCtx.Err(), err)
-		c.cfg.Logger.Warn("Disconnect timeout, tunnel may still be running")
+		c.cfg.Logger.Warn("Disconnect timeout expired - tunnel goroutine may still be running")
+		// Continue anyway to avoid blocking indefinitely
 	}
 
 	if err != nil {
 		c.cfg.Logger.Error("client disconnect encountered failures", "err", err)
-
 		return err
 	}
 
 	c.cfg.Logger.Debug("client disconnected")
-
 	return nil
 }
 

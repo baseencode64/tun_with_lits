@@ -212,7 +212,22 @@ func (c *VPNConnector) performFailover() {
 
 		// Try to connect to next server with NEW context
 		c.logger.Info("Connecting to next server", "host", nextServer.Host, "port", nextServer.Port)
-		err := c.client.Connect(nextServer.Link)
+		
+		// Use a channel to make Connect cancellable with the new context
+		connectDone := make(chan error, 1)
+		go func() {
+			connectDone <- c.client.Connect(nextServer.Link)
+		}()
+		
+		var err error
+		select {
+		case err = <-connectDone:
+			// Connection completed
+		case <-newCtx.Done():
+			err = fmt.Errorf("connection cancelled by context")
+			c.logger.Warn("Connection cancelled during failover")
+		}
+		
 		if err != nil {
 			c.logger.Error("Failed to connect to next server", "error", err, "host", nextServer.Host, "port", nextServer.Port)
 			
