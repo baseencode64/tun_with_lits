@@ -531,20 +531,37 @@ func (c *Client) createXrayProxy(link string) (xrayproto.Instance, *xrayproto.Ge
 	)
 
 	link = strings.TrimSpace(link)
+	
+	// Detect protocol type and log it
+	var protocolType string
+	if strings.HasPrefix(link, "vless://") {
+		protocolType = "VLESS"
+	} else if strings.HasPrefix(link, "vmess://") {
+		protocolType = "VMess"
+	} else if strings.HasPrefix(link, "trojan://") {
+		protocolType = "Trojan"
+	} else if strings.HasPrefix(link, "ss://") {
+		protocolType = "Shadowsocks"
+	} else {
+		protocolType = "Unknown"
+	}
+	
+	c.cfg.Logger.Info("Creating Xray proxy", "protocol", protocolType, "link_prefix", link[:min(30, len(link))]+"...")
+	
 	protocol, err := svc.CreateProtocol(link)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid config: protocol create: %w", err)
+		return nil, nil, fmt.Errorf("invalid config: protocol create (%s): %w", protocolType, err)
 	}
 
 	if err := protocol.Parse(); err != nil {
-		return nil, nil, fmt.Errorf("invalid config: parse: %w", err)
+		return nil, nil, fmt.Errorf("invalid config: parse (%s): %w", protocolType, err)
 	}
 
 	cfg := protocol.ConvertToGeneralConfig()
 
 	inst, err := svc.MakeInstance(protocol)
 	if err != nil {
-		return nil, nil, fmt.Errorf("make instance: %w", err)
+		return nil, nil, fmt.Errorf("make instance (%s): %w", protocolType, err)
 	}
 
 	// Validate xray proto addr.
@@ -553,6 +570,8 @@ func (c *Client) createXrayProxy(link string) (xrayproto.Instance, *xrayproto.Ge
 		return nil, nil, fmt.Errorf("xray address not resolvable: %w", err)
 	}
 	c.xSrvIP = ip
+	
+	c.cfg.Logger.Info("Xray proxy created successfully", "protocol", protocolType, "server", cfg.Address+":"+cfg.Port)
 
 	return inst, &cfg, nil
 }
@@ -727,4 +746,12 @@ func (c *Client) removeIPv6AddressSystem(ifName string) error {
 	
 	c.cfg.Logger.Debug("IPv6 address removed successfully", "interface", ifName)
 	return nil
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
