@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2026-05-22
+
+### Fixed
+
+- **Health check using wrong port causing false failovers**
+  - Fixed health checker to use SOCKS proxy port from `InboundProxy.Port` instead of remote server port
+  - Previously tried to connect to `127.0.0.1:8443` (server port) instead of actual SOCKS port (e.g., 42883)
+  - This caused immediate connection refused errors and triggered unnecessary failovers every 10 seconds
+  - Now correctly monitors the dynamic SOCKS proxy port assigned during VPN connection
+
+---
+
 ## [1.4.3] - 2026-05-22
 
 ### Fixed

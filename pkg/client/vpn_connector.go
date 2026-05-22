@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -106,6 +107,9 @@ func (c *VPNConnector) startHealthMonitoring(server *ServerInfo) {
 		c.healthChecker = nil
 	}
 	
+	// Get SOCKS proxy port from client config
+	socksPort := strconv.Itoa(c.client.cfg.InboundProxy.Port)
+	
 	// Create health checker with default settings
 	c.healthChecker = NewHealthChecker(
 		c.logger,
@@ -117,7 +121,7 @@ func (c *VPNConnector) startHealthMonitoring(server *ServerInfo) {
 	// Start health checks with automatic failover
 	// Use sync.Once to prevent multiple concurrent failover triggers
 	var failoverOnce sync.Once
-	c.healthChecker.Start(c.ctx, server.Host, server.Port, func() {
+	c.healthChecker.Start(c.ctx, server.Host, socksPort, func() {
 		failoverOnce.Do(func() {
 			c.logger.Warn("Health check failed - initiating automatic failover")
 			c.performFailover()

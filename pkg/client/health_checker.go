@@ -35,15 +35,13 @@ func NewHealthChecker(logger *slog.Logger, checkInterval time.Duration, timeout 
 	}
 }
 
-// Start begins health checking loop
-func (h *HealthChecker) Start(ctx context.Context, serverHost string, serverPort string, onUnhealthy func()) {
-	// For SOCKS proxy health check, we use the same port but on localhost
-	socksHost := "127.0.0.1"
-	h.logger.Info("Starting health checks", "server", serverHost+":"+serverPort, 
-		"socks_proxy", socksHost+":"+serverPort,
+// Start begins health checking loop for SOCKS proxy
+func (h *HealthChecker) Start(ctx context.Context, serverHost string, socksPort string, onUnhealthy func()) {
+	h.logger.Info("Starting health checks", "server", serverHost, 
+		"socks_proxy", "127.0.0.1:"+socksPort,
 		"interval", h.checkInterval, "timeout", h.timeout, "max_retries", h.maxRetries)
 
-	go h.healthCheckLoop(ctx, socksHost, serverPort, onUnhealthy)
+	go h.healthCheckLoop(ctx, "127.0.0.1", socksPort, onUnhealthy)
 }
 
 // Stop stops health checking with proper synchronization
