@@ -238,28 +238,57 @@ func (c *Client) Connect(link string) error {
 	time.Sleep(100 * time.Millisecond) // Sometimes XRay instance should have a bit more time to set up.
 	c.cfg.Logger.Debug("xray core instance started")
 
+	// CRITICAL FIX: Add route exception for Xray server BEFORE creating TUN
+	// This prevents routing loop where Xray traffic goes through TUN back to itself
+	c.cfg.Logger.Debug("adding route exception for Xray server before TUN setup")
+	_ = c.routes.Delete(c.xrayToGatewayRoute()) // In case previous run failed.
+	err = c.routes.Add(c.xrayToGatewayRoute())
+	if err != nil {
+		c.cfg.Logger.Error("routing xray server IP to default route failed", "err", err, "route", c.xrayToGatewayRoute())
+		// Clean up Xray instance on failure
+		c.xInst.Close()
+		return fmt.Errorf("add xray server route exception: %w", err)
+	}
+	c.cfg.Logger.Debug("Xray server route exception added successfully")
+
 	c.cfg.Logger.Debug("Setting up TUN device")
 	// Create TUN and route all traffic to it.
 	c.tunnel, err = c.setupTunnel()
 	if err != nil {
 		c.cfg.Logger.Error("TUN creation failed", "err", err)
-
+		// Clean up routes and Xray on failure
+		c.routes.Delete(c.xrayToGatewayRoute())
+		c.xInst.Close()
 		return fmt.Errorf("setup TUN device: %w", err)
 	}
 	c.tunnel = newReaderMetrics(c.tunnel)
 	c.cfg.Logger.Debug("TUN device created")
 
-	c.cfg.Logger.Debug("adding routes for TUN device")
-	// Set XRay remote address to be routed through the default gateway, so that we don't get a loop.
-	_ = c.routes.Delete(c.xrayToGatewayRoute()) // In case previous run failed.
-	c.cfg.Logger.Debug("deleted dangling routes")
-	err = c.routes.Add(c.xrayToGatewayRoute())
-	if err != nil {
-		c.cfg.Logger.Error("routing xray server IP to default route failed", "err", err, "route", c.xrayToGatewayRoute())
-
-		return fmt.Errorf("add xray server route exception: %w", err)
+	// Verify SOCKS proxy is listening before starting pipe
+	socksAddr := c.cfg.InboundProxy.String()
+	c.cfg.Logger.Debug("Verifying SOCKS proxy is listening", "address", socksAddr)
+	
+	// Wait for SOCKS proxy with timeout (up to 2 seconds)
+	proxyReady := false
+	for i := 0; i < 20; i++ {
+		conn, dialErr := net.DialTimeout("tcp", socksAddr, 100*time.Millisecond)
+		if dialErr == nil {
+			conn.Close()
+			proxyReady = true
+			c.cfg.Logger.Debug("SOCKS proxy is ready", "address", socksAddr, "attempts", i+1)
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	c.cfg.Logger.Debug("routing xray server IP to default route")
+	
+	if !proxyReady {
+		c.cfg.Logger.Error("SOCKS proxy failed to start", "address", socksAddr)
+		// Clean up
+		c.tunnel.Close()
+		c.routes.Delete(c.xrayToGatewayRoute())
+		c.xInst.Close()
+		return fmt.Errorf("SOCKS proxy at %s did not become ready within 2 seconds", socksAddr)
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -279,7 +308,10 @@ func (c *Client) Connect(link string) error {
 	wg.Wait()
 	
 	c.isConnected = true
-	c.cfg.Logger.Debug("client connected")
+	c.cfg.Logger.Info("VPN client connected successfully", 
+		"tun_address", c.cfg.TUNAddress.String(),
+		"xray_server", c.xSrvIP.String(),
+		"socks_proxy", socksAddr)
 
 	return nil
 }
@@ -392,6 +424,87 @@ func (c *Client) BytesWritten() int {
 	}
 
 	return c.tunnel.(*readerMetrics).BytesWritten()
+}
+
+// GetConnectionStatus returns current connection status and public IP information
+func (c *Client) GetConnectionStatus() map[string]interface{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	status := map[string]interface{}{
+		"is_connected": c.isConnected,
+		"tun_address":  c.cfg.TUNAddress.String(),
+	}
+
+	if c.isConnected {
+		// Get XRay server info
+		if c.xSrvIP != nil {
+			status["xray_server_ip"] = c.xSrvIP.String()
+		}
+		
+		// Get TUN interface name
+		if c.tunName != "" {
+			status["tun_interface"] = c.tunName
+		}
+		
+		// Try to get public IP (what external services see)
+		publicIPv4, publicIPv6 := c.getPublicIPs()
+		if publicIPv4 != "" {
+			status["public_ipv4"] = publicIPv4
+		}
+		if publicIPv6 != "" {
+			status["public_ipv6"] = publicIPv6
+		}
+		
+		// Add traffic stats
+		status["bytes_read"] = c.BytesRead()
+		status["bytes_written"] = c.BytesWritten()
+	}
+
+	return status
+}
+
+// getPublicIPs attempts to determine the public IP addresses by checking routing
+func (c *Client) getPublicIPs() (string, string) {
+	// For VPN connections, the public IP is typically the XRay server's exit node IP
+	// We can't directly query it without making external requests, but we can report:
+	// 1. The XRay server we're connected to
+	// 2. The TUN interface address (local VPN endpoint)
+	
+	var ipv4, ipv6 string
+	
+	// Local TUN address (VPN tunnel endpoint)
+	if c.cfg.TUNAddress != nil {
+		ipv4 = c.cfg.TUNAddress.IP.String()
+	}
+	
+	// IPv6 TUN address if enabled
+	if c.cfg.EnableIPv6 && defaultTUNAddressIPv6 != nil {
+		ipv6 = defaultTUNAddressIPv6.IP.String()
+	}
+	
+	return ipv4, ipv6
+}
+
+// LogConnectionStatus logs current connection status with IP information
+func (c *Client) LogConnectionStatus() {
+	status := c.GetConnectionStatus()
+	
+	if !status["is_connected"].(bool) {
+		c.cfg.Logger.Info("VPN Status: Disconnected")
+		return
+	}
+	
+	c.cfg.Logger.Info("VPN Connection Status",
+		"status", "connected",
+		"tun_interface", status["tun_interface"],
+		"tun_address", status["tun_address"],
+		"xray_server", status["xray_server_ip"],
+		"local_ipv4", status["public_ipv4"],
+		"local_ipv6", status["public_ipv6"],
+		"bytes_read", status["bytes_read"],
+		"bytes_written", status["bytes_written"],
+	)
 }
 
 // xrayToGatewayRoute is a setup to route VPN requests to gateway.

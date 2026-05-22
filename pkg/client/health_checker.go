@@ -105,11 +105,15 @@ func (h *HealthChecker) checkHealth(host string, port string) error {
 
 	addr := net.JoinHostPort(host, port)
 	
+	startTime := time.Now()
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	if err != nil {
-		return fmt.Errorf("dial failed: %w", err)
+		return fmt.Errorf("dial failed after %v: %w", time.Since(startTime), err)
 	}
 	defer conn.Close()
+
+	dialDuration := time.Since(startTime)
+	h.logger.Debug("Health check dial successful", "duration_ms", dialDuration.Milliseconds())
 
 	// Set deadline for response
 	if err := conn.SetReadDeadline(time.Now().Add(h.timeout)); err != nil {
@@ -118,10 +122,20 @@ func (h *HealthChecker) checkHealth(host string, port string) error {
 
 	// Try to read/write to verify connection is working
 	buf := make([]byte, 1)
+	readStart := time.Now()
 	_, err = conn.Read(buf)
+	readDuration := time.Since(readStart)
+	
 	if err != nil && err != net.ErrClosed {
 		// Connection reset or other error might indicate issues
-		h.logger.Debug("Health check read warning", "error", err)
+		h.logger.Debug("Health check read completed with warning", 
+			"dial_duration_ms", dialDuration.Milliseconds(),
+			"read_duration_ms", readDuration.Milliseconds(),
+			"error", err)
+	} else {
+		h.logger.Debug("Health check read successful",
+			"dial_duration_ms", dialDuration.Milliseconds(),
+			"read_duration_ms", readDuration.Milliseconds())
 	}
 
 	return nil
