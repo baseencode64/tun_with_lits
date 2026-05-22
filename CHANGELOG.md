@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-05-22
+
+### Fixed
+
+- **Unreliable health checks causing false failovers**
+  - Changed health check from direct TCP dial to remote server to SOCKS proxy verification
+  - Now properly tests tunnel functionality by sending SOCKS5 greeting and verifying response
+  - Eliminates false positives with Reality/VLESS servers that reject plain TCP connections
+  - Resolves intermittent traffic loss due to unnecessary server failovers
+- **Health check timeout errors in logs**
+  - Removed misleading "read tcp ... i/o timeout" warnings for Reality connections
+  - Health checks now complete successfully with proper SOCKS protocol handshake
+  - Added detailed timing metrics (dial_ms, write_ms, read_ms, total_ms)
+
+### Changed
+
+- Health checker now monitors `127.0.0.1:{port}` instead of remote server address
+- Improved health check reliability for all protocols (VLESS, VMess, Trojan, Shadowsocks)
+
+---
+
 ## [1.4.1] - 2026-05-22
 
 ### Fixed
