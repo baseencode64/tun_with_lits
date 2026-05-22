@@ -61,6 +61,37 @@ sudo go run . <proto_link>
 
 Where `proto_link` is your XRay link (like `vless://example.com...`), you can get this from your VPN provider or get it from your XRay server.
 
+#### Using Configuration File (Recommended)
+
+Create a YAML configuration file for easier management:
+
+```bash
+# Copy example config
+cp config.yaml.example goxray.yaml
+
+# Edit with your settings
+nano goxray.yaml
+
+# Run with config
+sudo go run . --config goxray.yaml
+```
+
+Configuration files support all settings including connection, logging, health monitoring, and server selection. CLI arguments override config file values.
+
+**Multiple Server List URLs with Fallback:**
+
+```yaml
+connection:
+  from_raw_urls:
+    - "https://primary.example.com/links.txt"
+    - "https://backup1.example.com/links.txt"
+    - "https://backup2.example.com/links.txt"
+```
+
+The client will try each URL in order. If the first fails, it automatically falls back to the next one.
+
+For detailed documentation, see [Configuration File Support](#configuration-file-support).
+
 #### Logging Options
 
 Enable JSON logging with rotation:
@@ -71,7 +102,19 @@ sudo go run . --from-raw https://example.com/links.txt \
   --log-level info
 ```
 
-For more details, see [JSON Logging Guide](JSON_LOGGING_GUIDE.md).
+Or use a configuration file (recommended for complex setups):
+```yaml
+# goxray.yaml
+connection:
+  from_raw: "https://example.com/links.txt"
+logging:
+  format: "json"
+  file: "/var/log/goxray/goxray.log"
+  max_size: 200
+  max_backups: 5
+```
+
+For more details, see [Configuration File Guide](CONFIG_FILE.md).
 
 ### As library in your own project:
 > [!NOTE]

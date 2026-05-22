@@ -18,9 +18,10 @@ import (
 )
 
 var cmdArgsErr = `ERROR: no config provided
-usage: %s <config_url_or_link> [options]
-  - config_url - xray connection link, like "vless://example..."
-  - or raw list URL: --from-raw <https://example.com/links.txt>
+usage: %s [options]
+  - Direct link: <vless://example...>
+  - Config file: --config <path/to/config.yaml>
+  - Raw list URL: --from-raw <https://example.com/links.txt>
   - or set GOXRAY_CONFIG_URL env var
 
 Options for --from-raw mode:
@@ -37,6 +38,10 @@ Logging options:
   --log-max-size <MB>           - max log file size in MB before rotation (default: 100)
   --log-max-backups <count>     - max number of backup log files (default: 3)
   --log-max-age <days>          - max age of backup logs in days (default: 28)
+
+Config file option:
+  --config <path>               - load configuration from YAML file
+                                  CLI arguments override config file values
 `
 
 func main() {
@@ -57,12 +62,21 @@ func main() {
 	var logMaxBackups int = 3
 	var logMaxAge int = 28
 
+	// Config file path
+	var configFile string = ""
+
 	args := os.Args[1:]
 
 	// Parse arguments with support for flags
 	i := 0
 	for i < len(args) {
 		switch args[i] {
+		case "--config":
+			if i+1 >= len(args) {
+				log.Fatal("--config requires a file path")
+			}
+			i++
+			configFile = args[i]
 		case "--from-raw":
 			fromRaw = true
 			if i+1 >= len(args) {
@@ -162,6 +176,83 @@ func main() {
 		i++
 	}
 
+	// Load config file if specified
+	var appConfig *client.AppConfig
+	if configFile != "" {
+		slog.Info("Loading configuration from file", "path", configFile)
+		var err error
+		appConfig, err = client.LoadConfig(configFile)
+		if err != nil {
+			log.Fatalf("Failed to load config file: %v", err)
+		}
+		slog.Info("Configuration loaded successfully")
+	}
+
+	// Apply config file values as defaults, CLI args override them
+	var rawURLsFromConfig []string // Store all URLs from config for fallback
+	
+	if appConfig != nil {
+		// Connection settings (CLI overrides config)
+		if clientLink == "" {
+			clientLink = appConfig.Connection.Link
+		}
+		
+		// Handle from_raw_urls (multiple URLs with fallback)
+		if !fromRaw && len(appConfig.Connection.FromRawURLs) > 0 {
+			fromRaw = true
+			rawURLsFromConfig = appConfig.Connection.FromRawURLs
+			rawURL = appConfig.Connection.FromRawURLs[0] // Use first as primary
+			slog.Info("Using multiple raw URLs from config", "primary_url", rawURL, "fallback_count", len(rawURLsFromConfig)-1)
+		} else if !fromRaw && appConfig.Connection.FromRaw != "" {
+			// Legacy single from_raw support
+			fromRaw = true
+			rawURL = appConfig.Connection.FromRaw
+		}
+		
+		if !enableIPv6 && appConfig.Connection.EnableIPv6 {
+			enableIPv6 = true
+		}
+
+		// Server selection settings (CLI overrides config)
+		if refreshInterval == 0 && appConfig.ServerSelection.RefreshInterval != "" {
+			var err error
+			refreshInterval, err = appConfig.ServerSelection.GetRefreshInterval()
+			if err != nil {
+				log.Fatalf("Invalid refresh interval in config: %v", err)
+			}
+		}
+		if maxServers == 10 && appConfig.ServerSelection.MaxServers != 10 {
+			maxServers = appConfig.ServerSelection.MaxServers
+		}
+		if timeout == 5*time.Second && appConfig.ServerSelection.Timeout != "" {
+			var err error
+			timeout, err = appConfig.ServerSelection.GetTimeout()
+			if err != nil {
+				log.Fatalf("Invalid timeout in config: %v", err)
+			}
+		}
+
+		// Logging settings (CLI overrides config)
+		if logFormat == "text" && appConfig.Logging.Format != "text" {
+			logFormat = appConfig.Logging.Format
+		}
+		if logLevel == "info" && appConfig.Logging.Level != "info" {
+			logLevel = appConfig.Logging.Level
+		}
+		if logFile == "" && appConfig.Logging.File != "" {
+			logFile = appConfig.Logging.File
+		}
+		if logMaxSize == 100 && appConfig.Logging.MaxSize != 100 {
+			logMaxSize = appConfig.Logging.MaxSize
+		}
+		if logMaxBackups == 3 && appConfig.Logging.MaxBackups != 3 {
+			logMaxBackups = appConfig.Logging.MaxBackups
+		}
+		if logMaxAge == 28 && appConfig.Logging.MaxAge != 28 {
+			logMaxAge = appConfig.Logging.MaxAge
+		}
+	}
+
 	if clientLink == "" && !fromRaw {
 		clientLink = os.Getenv("GOXRAY_CONFIG_URL")
 	}
@@ -200,18 +291,49 @@ func main() {
 		"max_backups", logMaxBackups,
 		"max_age_days", logMaxAge)
 
-	// If using raw URL, fetch and select servers with fallback support
+	// If using raw URL(s), fetch and select servers with fallback support
 	if fromRaw {
-		slog.Info("Fetching server list from raw URL", "url", rawURL, "refresh_interval", refreshInterval)
+		// Build list of URLs to try (support multiple URLs with fallback)
+		var rawURLs []string
+		
+		// Check if config has multiple URLs
+		if len(rawURLsFromConfig) > 0 {
+			rawURLs = rawURLsFromConfig
+			slog.Info("Using multiple raw URLs from config", "urls_count", len(rawURLs))
+		} else if rawURL != "" {
+			// Single URL from CLI or legacy config
+			rawURLs = []string{rawURL}
+			slog.Info("Fetching server list from raw URL", "url", rawURL, "refresh_interval", refreshInterval)
+		} else {
+			log.Fatal("No raw URL specified")
+		}
 
 		loggerAdapter := client.NewSlogAdapter(logger)
 		selector := client.NewServerSelector(loggerAdapter, timeout, maxServers)
 
-		// Initial fetch and connect
+		// Initial fetch and connect with URL fallback
 		connectToServers := func() error {
-			links, fetchErr := selector.FetchRawLinks(rawURL)
-			if fetchErr != nil {
-				return fmt.Errorf("fetch links: %w", fetchErr)
+			var links []string
+			var lastFetchErr error
+			
+			// Try each URL in order until one succeeds
+			for i, url := range rawURLs {
+				slog.Info("Attempting to fetch server list", "url_index", i+1, "total_urls", len(rawURLs), "url", url)
+				
+				var fetchErr error
+				links, fetchErr = selector.FetchRawLinks(url)
+				if fetchErr == nil {
+					slog.Info("Successfully fetched server list", "url_index", i+1, "links_count", len(links))
+					break
+				}
+				
+				lastFetchErr = fetchErr
+				slog.Warn("Failed to fetch from URL, trying next", "url_index", i+1, "url", url, "error", fetchErr)
+			}
+			
+			// All URLs failed
+			if len(links) == 0 {
+				return fmt.Errorf("failed to fetch from all %d URLs, last error: %w", len(rawURLs), lastFetchErr)
 			}
 
 			servers, selectErr := selector.SelectAllByLatency(links)
@@ -230,6 +352,10 @@ func main() {
 				return fmt.Errorf("connect: %w", connErr)
 			}
 
+			// Log initial connection status with IP information
+			slog.Info("VPN connected successfully, logging connection details")
+			vpn.LogConnectionStatus()
+
 			// Create a cancellable context for monitoring goroutines
 			monitorCtx, monitorCancel := context.WithCancel(context.Background())
 			
@@ -240,20 +366,30 @@ func main() {
 			}()
 
 			// Start periodic server list refresh if enabled
+			// Use first successful URL for periodic refresh
+			successfulURL := rawURLs[0] // Default to first URL
 			if refreshInterval > 0 {
-				slog.Info("Periodic server list refresh enabled", "interval", refreshInterval)
-				go startPeriodicRefresh(monitorCtx, connector, selector, rawURL, refreshInterval, timeout, maxServers)
+				slog.Info("Periodic server list refresh enabled", "interval", refreshInterval, "url", successfulURL)
+				go startPeriodicRefresh(monitorCtx, connector, selector, successfulURL, refreshInterval, timeout, maxServers)
 			}
 
-			// Monitor health status periodically
+			// Monitor health status and connection info periodically
 			go func() {
 				ticker := time.NewTicker(30 * time.Second)
 				defer ticker.Stop()
+				
+				// Log initial connection status immediately
+				vpn.LogConnectionStatus()
+				
 				for {
 					select {
 					case <-ticker.C:
+						// Log health status
 						status := connector.GetHealthStatus()
 						slog.Info("VPN Health Status", "status", status)
+						
+						// Log connection status with IP info
+						vpn.LogConnectionStatus()
 					case <-sigterm:
 						monitorCancel() // Signal other goroutines to stop
 						return
@@ -294,6 +430,7 @@ func main() {
 }
 
 // startPeriodicRefresh periodically fetches new server list and updates connection
+// Supports multiple URLs with fallback - tries each URL in order on failure
 func startPeriodicRefresh(
 	ctx context.Context,
 	currentConnector *client.VPNConnector,
@@ -316,7 +453,7 @@ func startPeriodicRefresh(
 
 			links, err := selector.FetchRawLinks(rawURL)
 			if err != nil {
-				slog.Warn("Failed to refresh server list", "error", err)
+				slog.Warn("Failed to refresh server list", "error", err, "url", rawURL)
 				continue
 			}
 

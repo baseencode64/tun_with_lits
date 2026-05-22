@@ -1,0 +1,60 @@
+# GoXRay VPN Client Configuration File
+# This file contains all available configuration options.
+# CLI arguments will override values specified here.
+
+# Connection settings
+connection:
+  # Direct VLESS link (use EITHER this OR from_raw, not both)
+  link: "vless://your-uuid-here@server.example.com:443?type=ws&path=/vless&security=tls&sni=server.example.com&fp=chrome"
+  
+  # Raw URL for server list (use EITHER this OR link, not both)
+  # from_raw: "https://example.com/links.txt"
+  
+  # Enable IPv6 support (default: false)
+  enable_ipv6: false
+  
+  # Allow insecure TLS certificates (default: false)
+  tls_allow_insecure: false
+
+# Server selection and refresh settings
+server_selection:
+  # Periodically refresh server list (e.g., "5m", "10m", "1h")
+  # Set to empty string or remove to disable periodic refresh
+  # refresh_interval: "10m"
+  
+  # Maximum number of servers to check (default: 10)
+  max_servers: 10
+  
+  # Timeout per server health check (default: "5s")
+  timeout: "5s"
+
+# Logging configuration
+logging:
+  # Log format: "text" or "json" (default: "text")
+  format: "text"
+  
+  # Log level: "debug", "info", "warn", or "error" (default: "info")
+  level: "info"
+  
+  # Log file path (optional, default: stdout only)
+  # file: "/var/log/goxray/goxray.log"
+  
+  # Max log file size in MB before rotation (default: 100)
+  max_size: 100
+  
+  # Max number of backup log files (default: 3)
+  max_backups: 3
+  
+  # Max age of backup logs in days (default: 28)
+  max_age: 28
+
+# Health monitoring settings
+health_monitoring:
+  # Health check interval (default: "10s")
+  check_interval: "10s"
+  
+  # Health check timeout (default: "5s")
+  timeout: "5s"
+  
+  # Max retries before failover (default: 3)
+  max_retries: 3
