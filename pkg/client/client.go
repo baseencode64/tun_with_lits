@@ -31,9 +31,10 @@ var (
 	// defaultTUNAddress is the address new TUN device will be set up with.
 	defaultTUNAddress = &net.IPNet{IP: net.IPv4(192, 18, 0, 1), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	
-	// defaultTUNAddressIPv6 is the IPv6 address for TUN device (ULA range).
+	// defaultTUNAddressIPv6 is the IPv6 address for TUN device (ULA range fd00::/8).
+	// Using fd00:dead:beef::1/64 as a unique local address for the VPN tunnel.
 	defaultTUNAddressIPv6 = &net.IPNet{
-		IP:   net.ParseIP("fd00:goxray::1"),
+		IP:   net.ParseIP("fd00:dead:beef::1"),
 		Mask: net.CIDRMask(64, 128),
 	}
 	

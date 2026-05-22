@@ -3,14 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/goxray/tun/pkg/client"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var cmdArgsErr = `ERROR: no config provided
@@ -25,6 +29,14 @@ Options for --from-raw mode:
   --max-servers <n>             - maximum number of servers to check (default: 10)
   --timeout <duration>          - timeout per server health check (default: 5s)
   --ipv6                        - enable IPv6 support (default: false)
+
+Logging options:
+  --log-format <format>         - log format: text or json (default: text)
+  --log-level <level>           - log level: debug, info, warn, error (default: info)
+  --log-file <path>             - log file path (optional, default: stdout only)
+  --log-max-size <MB>           - max log file size in MB before rotation (default: 100)
+  --log-max-backups <count>     - max number of backup log files (default: 3)
+  --log-max-age <days>          - max age of backup logs in days (default: 28)
 `
 
 func main() {
@@ -36,6 +48,14 @@ func main() {
 	var maxServers int = 10
 	var timeout time.Duration = 5 * time.Second
 	var enableIPv6 bool = false
+	
+	// Logging configuration
+	var logFormat string = "text"
+	var logLevel string = "info"
+	var logFile string = ""
+	var logMaxSize int = 100
+	var logMaxBackups int = 3
+	var logMaxAge int = 28
 
 	args := os.Args[1:]
 
@@ -82,6 +102,57 @@ func main() {
 			}
 		case "--ipv6":
 			enableIPv6 = true
+		case "--log-format":
+			if i+1 >= len(args) {
+				log.Fatal("--log-format requires a value (text or json)")
+			}
+			i++
+			logFormat = strings.ToLower(args[i])
+			if logFormat != "text" && logFormat != "json" {
+				log.Fatal("--log-format must be 'text' or 'json'")
+			}
+		case "--log-level":
+			if i+1 >= len(args) {
+				log.Fatal("--log-level requires a value (debug, info, warn, error)")
+			}
+			i++
+			logLevel = strings.ToLower(args[i])
+			if logLevel != "debug" && logLevel != "info" && logLevel != "warn" && logLevel != "error" {
+				log.Fatal("--log-level must be 'debug', 'info', 'warn', or 'error'")
+			}
+		case "--log-file":
+			if i+1 >= len(args) {
+				log.Fatal("--log-file requires a path")
+			}
+			i++
+			logFile = args[i]
+		case "--log-max-size":
+			if i+1 >= len(args) {
+				log.Fatal("--log-max-size requires a value in MB")
+			}
+			i++
+			fmt.Sscanf(args[i], "%d", &logMaxSize)
+			if logMaxSize <= 0 {
+				log.Fatal("--log-max-size must be positive")
+			}
+		case "--log-max-backups":
+			if i+1 >= len(args) {
+				log.Fatal("--log-max-backups requires a value")
+			}
+			i++
+			fmt.Sscanf(args[i], "%d", &logMaxBackups)
+			if logMaxBackups < 0 {
+				log.Fatal("--log-max-backups cannot be negative")
+			}
+		case "--log-max-age":
+			if i+1 >= len(args) {
+				log.Fatal("--log-max-age requires a value in days")
+			}
+			i++
+			fmt.Sscanf(args[i], "%d", &logMaxAge)
+			if logMaxAge < 0 {
+				log.Fatal("--log-max-age cannot be negative")
+			}
 		default:
 			// Positional argument (direct link)
 			if clientLink == "" {
@@ -103,9 +174,9 @@ func main() {
 	sigterm := make(chan os.Signal, 1)
 	signal.Notify(sigterm, os.Interrupt, syscall.SIGTERM)
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelError,
-	}))
+	// Create logger with JSON/text format and optional file rotation
+	logger, logCleanup := createLogger(logFormat, logLevel, logFile, logMaxSize, logMaxBackups, logMaxAge)
+	defer logCleanup()
 
 	vpn, err := client.NewClientWithOpts(client.Config{
 		TLSAllowInsecure: false,
@@ -119,6 +190,15 @@ func main() {
 	if enableIPv6 {
 		slog.Info("IPv6 support enabled")
 	}
+
+	// Log configuration info
+	slog.Info("Logging configuration", 
+		"format", logFormat, 
+		"level", logLevel,
+		"file", logFile,
+		"max_size_mb", logMaxSize,
+		"max_backups", logMaxBackups,
+		"max_age_days", logMaxAge)
 
 	// If using raw URL, fetch and select servers with fallback support
 	if fromRaw {
@@ -142,8 +222,8 @@ func main() {
 			connector := client.NewVPNConnector(vpn, selector, logger)
 			defer connector.Stop()
 
-			report := connector.GetConnectionReport(servers)
-			slog.Info("Server selection results:\n" + report)
+			// Log server report in structured format (JSON-compatible)
+			connector.LogServerReport(servers)
 
 			slog.Info("Attempting VPN connection with fallback support", "servers_count", len(servers))
 			if connErr := connector.ConnectWithFallback(servers); connErr != nil {
@@ -251,12 +331,88 @@ func startPeriodicRefresh(
 
 			// Note: Current implementation logs the update but doesn't force reconnect
 			// The health monitoring system will automatically switch to better servers if needed
-			report := currentConnector.GetConnectionReport(servers)
-			slog.Info("Updated server list:\n" + report)
-			
-			// Clear old data to prevent memory leaks - only keep current server list
-			links = nil
-			servers = nil
+			currentConnector.LogServerReport(servers)
 		}
 	}
+}
+
+// createLogger creates a slog logger with JSON/text format and optional file rotation
+func createLogger(format string, level string, logFile string, maxSize int, maxBackups int, maxAge int) (*slog.Logger, func()) {
+	// Parse log level
+	var slogLevel slog.Level
+	switch strings.ToLower(level) {
+	case "debug":
+		slogLevel = slog.LevelDebug
+	case "info":
+		slogLevel = slog.LevelInfo
+	case "warn":
+		slogLevel = slog.LevelWarn
+	case "error":
+		slogLevel = slog.LevelError
+	default:
+		slogLevel = slog.LevelInfo
+	}
+
+	handlerOpts := &slog.HandlerOptions{
+		Level: slogLevel,
+	}
+
+	var writers []io.Writer
+	var cleanupFuncs []func()
+
+	// Always log to stdout
+	writers = append(writers, os.Stdout)
+
+	// If log file specified, add file writer with rotation
+	var fileWriter io.WriteCloser
+	if logFile != "" {
+		// Ensure directory exists
+		logDir := filepath.Dir(logFile)
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			log.Fatalf("Failed to create log directory %s: %v", logDir, err)
+		}
+
+		// Create lumberjack logger for rotation
+		fileWriter = &lumberjack.Logger{
+			Filename:   logFile,
+			MaxSize:    maxSize,    // megabytes
+			MaxBackups: maxBackups, // number of backup files
+			MaxAge:     maxAge,     // days
+			Compress:   true,       // compress old logs
+		}
+		
+		writers = append(writers, fileWriter)
+		
+		// Add cleanup function to close file
+		cleanupFuncs = append(cleanupFuncs, func() {
+			if err := fileWriter.Close(); err != nil {
+				log.Printf("Warning: failed to close log file: %v", err)
+			}
+		})
+	}
+
+	// Create multi-writer
+	multiWriter := io.MultiWriter(writers...)
+
+	// Create handler based on format
+	var handler slog.Handler
+	if strings.ToLower(format) == "json" {
+		handler = slog.NewJSONHandler(multiWriter, handlerOpts)
+	} else {
+		handler = slog.NewTextHandler(multiWriter, handlerOpts)
+	}
+
+	logger := slog.New(handler)
+	
+	// Set as default logger for slog package
+	slog.SetDefault(logger)
+
+	// Combined cleanup function
+	cleanup := func() {
+		for _, fn := range cleanupFuncs {
+			fn()
+		}
+	}
+
+	return logger, cleanup
 }

@@ -328,3 +328,63 @@ func (c *VPNConnector) GetConnectionReport(servers []*ServerInfo) string {
 
 	return report
 }
+
+// LogServerReport logs server selection results in a structured format suitable for JSON logging
+func (c *VPNConnector) LogServerReport(servers []*ServerInfo) {
+	if len(servers) == 0 {
+		c.logger.Warn("No servers available")
+		return
+	}
+
+	// Log summary
+	c.logger.Info("Server selection summary",
+		"total_scanned", len(servers),
+		"available_count", len(servers))
+
+	// Log each server as a separate structured entry
+	for i, srv := range servers {
+		status := "available"
+		recommended := false
+		
+		if i == 0 {
+			status = "recommended"
+			recommended = true
+		}
+
+		// Use appropriate log level based on position
+		if recommended {
+			c.logger.Info("Server ranked #1 (recommended)",
+				"rank", i+1,
+				"host", srv.Host,
+				"port", srv.Port,
+				"latency_ms", srv.Latency.Milliseconds(),
+				"latency", srv.Latency.String(),
+				"status", status,
+				"link_preview", truncateLink(srv.Link, 50))
+		} else if i < 3 {
+			c.logger.Debug("Top server candidate",
+				"rank", i+1,
+				"host", srv.Host,
+				"port", srv.Port,
+				"latency_ms", srv.Latency.Milliseconds(),
+				"latency", srv.Latency.String(),
+				"status", status)
+		} else {
+			c.logger.Debug("Additional server",
+				"rank", i+1,
+				"host", srv.Host,
+				"port", srv.Port,
+				"latency_ms", srv.Latency.Milliseconds(),
+				"latency", srv.Latency.String(),
+				"status", status)
+		}
+	}
+}
+
+// truncateLink truncates a link to specified length for safe logging
+func truncateLink(link string, maxLen int) string {
+	if len(link) <= maxLen {
+		return link
+	}
+	return link[:maxLen] + "..."
+}

@@ -29,6 +29,7 @@ Please visit https://xtls.github.io/en for more info.
 - Supports all [Xray-core](https://github.com/XTLS/Xray-core) protocols (vless, vmess e.t.c.) using link notation (`vless://` e.t.c.)
 - Only soft routing rules are applied, no changes made to default routes
 - **IPv6 support** - Full dual-stack IPv4/IPv6 tunneling (enable with `--ipv6` flag)
+- **JSON logging** - Structured logging with automatic rotation (see [JSON Logging Guide](JSON_LOGGING_GUIDE.md))
 
 ## ⚡️ Installation
 
@@ -59,6 +60,18 @@ sudo go run . <proto_link>
 ```
 
 Where `proto_link` is your XRay link (like `vless://example.com...`), you can get this from your VPN provider or get it from your XRay server.
+
+#### Logging Options
+
+Enable JSON logging with rotation:
+```bash
+sudo go run . --from-raw https://example.com/links.txt \
+  --log-file /var/log/goxray/goxray.log \
+  --log-format json \
+  --log-level info
+```
+
+For more details, see [JSON Logging Guide](JSON_LOGGING_GUIDE.md).
 
 ### As library in your own project:
 > [!NOTE]
@@ -117,15 +130,8 @@ docker run --platform=linux/amd64 -v=${PWD}:/app --workdir=/app amd64/golang:1.2
 - Tunnel is created to process all incoming IP packets via TCP/IP stack. All outbound traffic is routed through the XRay inbound proxy and all incoming packets are routed back via TUN device.
 
 ## 📝 TODO
-- [ ] Add IPV6 support
 - [ ] Add DNS leak protection
 - [ ] Add Web Dashboard / TUI interface
-
-## 🎯 Motivation
-There are no available XRay clients implementations in Go on Github, so I decided to do it myself. The attempt proved to be successfull and I wanted to share my findings in a complete and working VPN client.
-
-## Credits
-
-- https://github.com/xtls/xray-core
-- https://github.com/lilendian0x00/xray-knife
-- https://github.com/jackpal/gateway
+- [ ] Add Prometheus metrics endpoint
+- [ ] Add configuration file support (YAML/TOML)
+- [ ] Add kill switch functionality
