@@ -24,6 +24,7 @@ Options for --from-raw mode:
                                   default: 0 (no refresh)
   --max-servers <n>             - maximum number of servers to check (default: 10)
   --timeout <duration>          - timeout per server health check (default: 5s)
+  --ipv6                        - enable IPv6 support (default: false)
 `
 
 func main() {
@@ -34,6 +35,7 @@ func main() {
 	var refreshInterval time.Duration = 0 // Default: no refresh
 	var maxServers int = 10
 	var timeout time.Duration = 5 * time.Second
+	var enableIPv6 bool = false
 
 	args := os.Args[1:]
 
@@ -78,6 +80,8 @@ func main() {
 			if err != nil {
 				log.Fatalf("Invalid timeout format: %v", err)
 			}
+		case "--ipv6":
+			enableIPv6 = true
 		default:
 			// Positional argument (direct link)
 			if clientLink == "" {
@@ -106,9 +110,14 @@ func main() {
 	vpn, err := client.NewClientWithOpts(client.Config{
 		TLSAllowInsecure: false,
 		Logger:           logger,
+		EnableIPv6:       enableIPv6,
 	})
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if enableIPv6 {
+		slog.Info("IPv6 support enabled")
 	}
 
 	// If using raw URL, fetch and select servers with fallback support

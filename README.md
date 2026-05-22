@@ -28,6 +28,7 @@ Please visit https://xtls.github.io/en for more info.
 - Stupidly easy to use
 - Supports all [Xray-core](https://github.com/XTLS/Xray-core) protocols (vless, vmess e.t.c.) using link notation (`vless://` e.t.c.)
 - Only soft routing rules are applied, no changes made to default routes
+- **IPv6 support** - Full dual-stack IPv4/IPv6 tunneling (enable with `--ipv6` flag)
 
 ## ⚡️ Installation
 
@@ -117,6 +118,8 @@ docker run --platform=linux/amd64 -v=${PWD}:/app --workdir=/app amd64/golang:1.2
 
 ## 📝 TODO
 - [ ] Add IPV6 support
+- [ ] Add DNS leak protection
+- [ ] Add Web Dashboard / TUI interface
 
 ## 🎯 Motivation
 There are no available XRay clients implementations in Go on Github, so I decided to do it myself. The attempt proved to be successfull and I wanted to share my findings in a complete and working VPN client.

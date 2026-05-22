@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,17 +30,31 @@ const disconnectTimeout = 30 * time.Second
 var (
 	// defaultTUNAddress is the address new TUN device will be set up with.
 	defaultTUNAddress = &net.IPNet{IP: net.IPv4(192, 18, 0, 1), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	
+	// defaultTUNAddressIPv6 is the IPv6 address for TUN device (ULA range).
+	defaultTUNAddressIPv6 = &net.IPNet{
+		IP:   net.ParseIP("fd00:goxray::1"),
+		Mask: net.CIDRMask(64, 128),
+	}
+	
 	// defaultInboundProxy default proxy will be set up for listening on 127.0.0.1.
 	defaultInboundProxy = &Proxy{
 		IP:   net.IPv4(127, 0, 0, 1),
 		Port: getFreePort(),
 	}
 
-	// DefaultRoutesToTUN will route all system traffic through the TUN.
+	// DefaultRoutesToTUN will route all system traffic through the TUN (IPv4 only).
 	DefaultRoutesToTUN = []*route.Addr{
-		// Reroute all traffic.
+		// Reroute all IPv4 traffic.
 		route.MustParseAddr("0.0.0.0/1"),
 		route.MustParseAddr("128.0.0.0/1"),
+	}
+	
+	// DefaultRoutesToTUNIPv6 will route all IPv6 system traffic through the TUN.
+	DefaultRoutesToTUNIPv6 = []*route.Addr{
+		// Reroute all IPv6 traffic.
+		route.MustParseAddr("::/1"),
+		route.MustParseAddr("8000::/1"),
 	}
 )
 
@@ -68,6 +83,8 @@ type Config struct {
 	Logger *slog.Logger
 	// XRayLogType is used to redefine xray core log type (default: LogType_None).
 	XRayLogType xapplog.LogType
+	// EnableIPv6 enables IPv6 support for TUN device (default: false).
+	EnableIPv6 bool
 }
 
 func (c *Config) apply(new *Config) {
@@ -89,6 +106,8 @@ func (c *Config) apply(new *Config) {
 	if new.XRayLogType != xapplog.LogType_None {
 		c.XRayLogType = new.XRayLogType
 	}
+	// EnableIPv6 is a boolean flag, always apply if explicitly set
+	c.EnableIPv6 = new.EnableIPv6
 }
 
 // Client is the actual VPN cl. It manages connections, routing and tunneling of the requests.
@@ -106,6 +125,7 @@ type Client struct {
 
 	tunnelStopped chan error
 	stopTunnel    func()
+	tunName       string // Stores TUN interface name for cleanup
 	
 	mu sync.Mutex // Protects concurrent access during connect/disconnect
 	isConnected bool // Tracks connection state to prevent double operations
@@ -308,6 +328,26 @@ func (c *Client) Disconnect(ctx context.Context) error {
 		}
 	}
 	
+	// Clean up IPv6 routes if enabled
+	if c.cfg.EnableIPv6 && c.tunName != "" {
+		c.cfg.Logger.Debug("Cleaning up IPv6 routes")
+		
+		// Try route library first
+		if err := c.routes.Delete(route.Opts{IfName: c.tunName, Routes: DefaultRoutesToTUNIPv6}); err != nil {
+			c.cfg.Logger.Debug("Route library cleanup failed, trying system commands", "error", err)
+			
+			// Fallback to system commands
+			if sysErr := c.removeIPv6RoutesSystem(c.tunName); sysErr != nil {
+				c.cfg.Logger.Warn("IPv6 route cleanup via system commands also failed", "error", sysErr)
+			}
+		}
+		
+		// Also remove IPv6 address from interface
+		if addrErr := c.removeIPv6AddressSystem(c.tunName); addrErr != nil {
+			c.cfg.Logger.Warn("Failed to remove IPv6 address from interface", "error", addrErr)
+		}
+	}
+	
 	err := errors.Join(errs...)
 
 	// Waiting till the tunnel actually done with processing connections.
@@ -427,15 +467,94 @@ func (c *Client) setupTunnel() (*tun.Interface, error) {
 		return nil, fmt.Errorf("create tun: %w", err)
 	}
 
+	// Store interface name for cleanup
+	c.tunName = ifc.Name()
+	c.cfg.Logger.Debug("Setting up TUN interface", "name", c.tunName, "ipv4_address", c.cfg.TUNAddress)
+
+	// Setup IPv4 address
 	if err = ifc.Up(c.cfg.TUNAddress, c.cfg.TUNAddress.IP); err != nil {
-		return nil, fmt.Errorf("setup interface: %w", err)
+		return nil, fmt.Errorf("setup IPv4 interface: %w", err)
 	}
 
+	// Setup IPv6 address if enabled
+	if c.cfg.EnableIPv6 {
+		c.cfg.Logger.Debug("Enabling IPv6 support on TUN interface", "ipv6_address", defaultTUNAddressIPv6)
+		
+		// Configure IPv6 on the TUN interface using system commands
+		if err = c.setupIPv6OnInterface(ifc.Name()); err != nil {
+			c.cfg.Logger.Warn("Failed to configure IPv6 on TUN interface", "error", err)
+			// Continue anyway - IPv4 will still work
+		}
+	}
+
+	// Add IPv4 routes
+	c.cfg.Logger.Debug("Adding IPv4 routes for TUN interface", "routes_count", len(c.cfg.RoutesToTUN))
 	if err = c.routes.Add(route.Opts{IfName: ifc.Name(), Routes: c.cfg.RoutesToTUN}); err != nil {
-		return nil, fmt.Errorf("add route: %w", err)
+		return nil, fmt.Errorf("add IPv4 routes: %w", err)
+	}
+
+	// Add IPv6 routes if enabled
+	if c.cfg.EnableIPv6 {
+		c.cfg.Logger.Debug("Adding IPv6 routes for TUN interface", "routes_count", len(DefaultRoutesToTUNIPv6))
+		
+		// Try using route library first
+		if err = c.routes.Add(route.Opts{IfName: ifc.Name(), Routes: DefaultRoutesToTUNIPv6}); err != nil {
+			c.cfg.Logger.Warn("Route library failed for IPv6, trying system commands", "error", err)
+			
+			// Fallback to system commands
+			if sysErr := c.addIPv6RoutesSystem(ifc.Name()); sysErr != nil {
+				c.cfg.Logger.Error("Failed to add IPv6 routes via system commands", "error", sysErr)
+				return nil, fmt.Errorf("add IPv6 routes: %w (library: %v, system: %v)", err, err, sysErr)
+			}
+		}
 	}
 
 	return ifc, nil
+}
+
+// setupIPv6OnInterface configures IPv6 address on the TUN interface using system commands
+func (c *Client) setupIPv6OnInterface(ifName string) error {
+	c.cfg.Logger.Info("Configuring IPv6 on TUN interface", "interface", ifName, "address", defaultTUNAddressIPv6.String())
+	
+	// Use ip command to add IPv6 address
+	cmd := exec.Command("ip", "-6", "addr", "add", defaultTUNAddressIPv6.String(), "dev", ifName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to add IPv6 address: %w, output: %s", err, string(output))
+	}
+	
+	c.cfg.Logger.Debug("IPv6 address configured successfully", "interface", ifName)
+	return nil
+}
+
+// addIPv6RoutesSystem adds IPv6 routes using system ip command
+func (c *Client) addIPv6RoutesSystem(ifName string) error {
+	c.cfg.Logger.Info("Adding IPv6 routes via system commands", "interface", ifName)
+	
+	var lastErr error
+	
+	for _, routeAddr := range DefaultRoutesToTUNIPv6 {
+		routeStr := routeAddr.String()
+		c.cfg.Logger.Debug("Adding IPv6 route", "route", routeStr, "interface", ifName)
+		
+		// Execute: ip -6 route add <route> dev <interface>
+		cmd := exec.Command("ip", "-6", "route", "add", routeStr, "dev", ifName)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			c.cfg.Logger.Warn("Failed to add IPv6 route", "route", routeStr, "error", err, "output", string(output))
+			lastErr = err
+			continue
+		}
+		
+		c.cfg.Logger.Debug("IPv6 route added successfully", "route", routeStr)
+	}
+	
+	if lastErr != nil {
+		return fmt.Errorf("some IPv6 routes failed to add: %w", lastErr)
+	}
+	
+	c.cfg.Logger.Info("All IPv6 routes added successfully")
+	return nil
 }
 
 func getFreePort() int {
@@ -449,4 +568,49 @@ func getFreePort() int {
 	port := addr.Port
 
 	return port
+}
+
+// removeIPv6RoutesSystem removes IPv6 routes using system ip command
+func (c *Client) removeIPv6RoutesSystem(ifName string) error {
+	c.cfg.Logger.Info("Removing IPv6 routes via system commands", "interface", ifName)
+	
+	var lastErr error
+	
+	for _, routeAddr := range DefaultRoutesToTUNIPv6 {
+		routeStr := routeAddr.String()
+		c.cfg.Logger.Debug("Removing IPv6 route", "route", routeStr, "interface", ifName)
+		
+		// Execute: ip -6 route del <route> dev <interface>
+		cmd := exec.Command("ip", "-6", "route", "del", routeStr, "dev", ifName)
+		err := cmd.Run()
+		if err != nil {
+			c.cfg.Logger.Debug("Failed to remove IPv6 route (may not exist)", "route", routeStr, "error", err)
+			lastErr = err
+			continue
+		}
+		
+		c.cfg.Logger.Debug("IPv6 route removed successfully", "route", routeStr)
+	}
+	
+	if lastErr != nil {
+		return fmt.Errorf("some IPv6 routes failed to remove: %w", lastErr)
+	}
+	
+	c.cfg.Logger.Debug("All IPv6 routes removed successfully")
+	return nil
+}
+
+// removeIPv6AddressSystem removes IPv6 address from the TUN interface using system ip command
+func (c *Client) removeIPv6AddressSystem(ifName string) error {
+	c.cfg.Logger.Debug("Removing IPv6 address from TUN interface", "interface", ifName, "address", defaultTUNAddressIPv6.String())
+	
+	// Use ip command to remove IPv6 address
+	cmd := exec.Command("ip", "-6", "addr", "del", defaultTUNAddressIPv6.String(), "dev", ifName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to remove IPv6 address: %w, output: %s", err, string(output))
+	}
+	
+	c.cfg.Logger.Debug("IPv6 address removed successfully", "interface", ifName)
+	return nil
 }
