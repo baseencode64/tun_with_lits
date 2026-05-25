@@ -1041,46 +1041,19 @@ func (c *Client) monitorTraffic(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	
-	attemptCount := 0
-	
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			attemptCount++
-			
 			var bytesRead, bytesWritten int64
 			
-			// Try reading from readerMetrics wrapper first
-			if rm, ok := c.tunnel.(*readerMetrics); ok {
-				bytesRead = int64(rm.BytesRead())
-				bytesWritten = int64(rm.BytesWritten())
-				
-				// If readerMetrics shows 0 after 10 attempts, try /proc/net/dev
-				if bytesRead == 0 && bytesWritten == 0 && attemptCount >= 10 {
-					c.cfg.Logger.Debug("readerMetrics shows zero traffic, trying /proc/net/dev", 
-						"tun_name", c.tunName)
-					
-					if c.tunName != "" {
-						rx, tx := c.readInterfaceStats(c.tunName)
-						if rx > 0 || tx > 0 {
-							c.cfg.Logger.Info("Successfully read traffic from /proc/net/dev",
-								"rx_bytes", rx, "tx_bytes", tx)
-							bytesRead = rx
-							bytesWritten = tx
-						}
-					}
-				}
-			} else {
-				c.cfg.Logger.Warn("Tunnel is not wrapped in readerMetrics", "type", fmt.Sprintf("%T", c.tunnel))
-				
-				// Fallback to /proc/net/dev
-				if c.tunName != "" {
-					rx, tx := c.readInterfaceStats(c.tunName)
-					bytesRead = rx
-					bytesWritten = tx
-				}
+			// Always use /proc/net/dev for reliable traffic statistics
+			// readerMetrics may not work correctly with TUN interfaces
+			if c.tunName != "" {
+				rx, tx := c.readInterfaceStats(c.tunName)
+				bytesRead = rx
+				bytesWritten = tx
 			}
 			
 			atomic.StoreInt64(&c.bytesRead, bytesRead)
@@ -1283,33 +1256,48 @@ func (c *Client) readInterfaceStats(ifaceName string) (int64, int64) {
 		return 0, 0
 	}
 	
+	// Format of /proc/net/dev:
+	// Inter-|   Receive                                                |  Transmit
+	//  face |bytes    packets err drop fifo frame compressed multicast|bytes    packets err drop fifo colls carrier compressed
+	// tun0: 1234567   12345   0   0    0     0          0         0    1234567   12345   0   0    0     0       0          0
+	
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if !strings.Contains(line, ifaceName+":") {
+		
+		// Look for line starting with interface name followed by colon
+		// Example: "tun0: 1234567 12345 ..."
+		if !strings.HasPrefix(line, ifaceName+":") && !strings.HasPrefix(line, ifaceName + ": ") {
 			continue
 		}
 		
-		// Format: eth0: rx_bytes rx_packets ... tx_bytes tx_packets ...
-		parts := strings.Fields(line)
-		if len(parts) < 10 {
+		// Split by colon to separate interface name from stats
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
 			continue
 		}
 		
-		// Remove interface name suffix
-		namePart := parts[0]
-		if idx := strings.Index(namePart, ":"); idx != -1 {
-			namePart = namePart[:idx]
-		}
+		// Parse the stats part
+		statsStr := strings.TrimSpace(parts[1])
+		stats := strings.Fields(statsStr)
 		
-		if namePart != ifaceName {
+		// Need at least 10 fields for RX and TX stats
+		// RX: bytes(0) packets(1) errs(2) drop(3) fifo(4) frame(5) compressed(6) multicast(7)
+		// TX: bytes(8) packets(9) ...
+		if len(stats) < 10 {
 			continue
 		}
 		
-		// Parse RX bytes (field 1) and TX bytes (field 9)
+		// Parse RX bytes (index 0) and TX bytes (index 8)
 		var rxBytes, txBytes int64
-		fmt.Sscanf(parts[1], "%d", &rxBytes)
-		fmt.Sscanf(parts[9], "%d", &txBytes)
+		if _, err := fmt.Sscanf(stats[0], "%d", &rxBytes); err != nil {
+			c.cfg.Logger.Debug("Failed to parse RX bytes", "value", stats[0], "error", err)
+			continue
+		}
+		if _, err := fmt.Sscanf(stats[8], "%d", &txBytes); err != nil {
+			c.cfg.Logger.Debug("Failed to parse TX bytes", "value", stats[8], "error", err)
+			continue
+		}
 		
 		return rxBytes, txBytes
 	}
