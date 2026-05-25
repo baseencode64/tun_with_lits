@@ -1002,16 +1002,27 @@ func (c *Client) startMetricsUpdate() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		
-		connectTime := time.Now()
+		var connectTime time.Time
+		connectedLogged := false
 		
 		for {
 			select {
 			case <-ticker.C:
 				if !c.isConnected {
-					return
+					// Wait for connection - don't terminate the goroutine
+					if !connectedLogged {
+						c.cfg.Logger.Debug("Metrics: waiting for VPN connection")
+						connectedLogged = true
+					}
+					continue // Skip this iteration, wait for connection
 				}
 				
-				// Update traffic metrics
+				// Record connection start time on first connected tick
+				if connectTime.IsZero() {
+					connectTime = time.Now()
+				}
+				
+				// Update traffic metrics from atomic counters
 				vpnBytesRead.Set(float64(c.BytesRead()))
 				vpnBytesWritten.Set(float64(c.BytesWritten()))
 				
@@ -1041,6 +1052,9 @@ func (c *Client) monitorTraffic(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	
+	// Log TUN interface name for debugging
+	c.cfg.Logger.Debug("Traffic monitoring started", "tun_name", c.tunName)
+	
 	for {
 		select {
 		case <-ctx.Done():
@@ -1049,11 +1063,15 @@ func (c *Client) monitorTraffic(ctx context.Context) {
 			var bytesRead, bytesWritten int64
 			
 			// Always use /proc/net/dev for reliable traffic statistics
-			// readerMetrics may not work correctly with TUN interfaces
 			if c.tunName != "" {
 				rx, tx := c.readInterfaceStats(c.tunName)
 				bytesRead = rx
 				bytesWritten = tx
+				
+				// Log on first non-zero read for debugging
+				if rx > 0 || tx > 0 {
+					c.cfg.Logger.Debug("Traffic stats read", "interface", c.tunName, "rx_bytes", rx, "tx_bytes", tx)
+				}
 			}
 			
 			atomic.StoreInt64(&c.bytesRead, bytesRead)

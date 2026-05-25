@@ -15,12 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed duplicate IPv6 DNS route additions in `setupTunnel()`
   - Clean log output with no 'file exists' errors during connection establishment
 
-- **Fixed Prometheus traffic metrics not being collected**
+- **Fixed Prometheus metrics not updating for traffic and connection duration**
+  - Fixed `startMetricsUpdate()` goroutine prematurely terminating when VPN is not connected
+  - Goroutine now waits for connection instead of exiting with `return`
+  - Metrics `vpn_bytes_read_total`, `vpn_bytes_written_total`, and `vpn_connection_duration_seconds` now update correctly
   - Fixed `monitorTraffic()` to always use `/proc/net/dev` as reliable source for traffic statistics
   - Removed unreliable `readerMetrics` wrapper that wasn't working correctly with TUN interfaces
   - Fixed `readInterfaceStats()` to correctly parse interface name and statistics from `/proc/net/dev`
   - Corrected field indices for RX/TX bytes parsing (RX: index 0, TX: index 8)
-  - Metrics `vpn_bytes_read_total` and `vpn_bytes_written_total` now update correctly
 
 ### Changed
 
