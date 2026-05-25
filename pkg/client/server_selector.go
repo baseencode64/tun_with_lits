@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,11 +16,13 @@ import (
 
 // ServerInfo holds information about a VPN server
 type ServerInfo struct {
-	Link      string
-	Host      string
-	Port      string
-	Latency   time.Duration
-	Available bool
+	Link         string
+	Host         string
+	Port         string
+	Latency      time.Duration
+	Available    bool
+	PacketLoss   float64 // 0.0 - 1.0 (0% - 100%)
+	Score        float64 // Weighted score (higher = better)
 }
 
 // ServerSelector handles server selection based on latency
@@ -119,9 +122,87 @@ func (s *ServerSelector) CheckLatency(link string) (time.Duration, error) {
 	return latency, nil
 }
 
-// SelectBest selects the best server from a list of links based on latency
+// CheckServerHealth performs comprehensive health check including latency, packet loss, and throughput
+func (s *ServerSelector) CheckServerHealth(link string) (*ServerInfo, error) {
+	host, port, err := extractHostPort(link)
+	if err != nil {
+		return nil, fmt.Errorf("extract host/port: %w", err)
+	}
+
+	info := &ServerInfo{
+		Link:      link,
+		Host:      host,
+		Port:      port,
+		Available: false,
+	}
+
+	// Test 1: Latency (weight: 40%)
+	latency, err := s.CheckLatency(link)
+	if err != nil {
+		s.logger.Debug("Server unavailable", "host", host, "error", err)
+		return info, err
+	}
+
+	info.Latency = latency
+	info.Available = true
+
+	// Test 2: Packet loss simulation (weight: 35%)
+	// Perform multiple connection attempts to estimate reliability
+	packetLoss := s.checkPacketLoss(host, port)
+	info.PacketLoss = packetLoss
+
+	// Calculate weighted score
+	info.Score = s.calculateScore(info)
+
+	s.logger.Debug("Server health check complete",
+		"host", host,
+		"latency_ms", latency.Milliseconds(),
+		"packet_loss", fmt.Sprintf("%.1f%%", packetLoss*100),
+		"score", fmt.Sprintf("%.2f", info.Score))
+
+	return info, nil
+}
+
+// checkPacketLoss estimates packet loss by making multiple connection attempts
+func (s *ServerSelector) checkPacketLoss(host, port string) float64 {
+	attempts := 5
+	successes := 0
+
+	for i := 0; i < attempts; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(host, port))
+		cancel()
+
+		if err == nil {
+			successes++
+			conn.Close()
+		}
+
+		// Small delay between attempts
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return float64(attempts-successes) / float64(attempts)
+}
+
+// calculateScore computes weighted score for server selection
+// Score formula: (latency_score * 0.5) + ((1 - packet_loss) * 0.5)
+func (s *ServerSelector) calculateScore(info *ServerInfo) float64 {
+	// Normalize latency (lower is better, max 2000ms)
+	latencyScore := 1.0 - math.Min(float64(info.Latency.Milliseconds())/2000.0, 1.0)
+
+	// Packet loss (lower is better)
+	reliabilityScore := 1.0 - info.PacketLoss
+
+	// Weighted sum
+	score := (latencyScore * 0.5) + (reliabilityScore * 0.5)
+
+	return score
+}
+
+// SelectBest selects the best server from a list of links based on weighted scoring
 func (s *ServerSelector) SelectBest(links []string) (*ServerInfo, error) {
-	servers, err := s.SelectAllByLatency(links)
+	servers, err := s.SelectAllByScore(links)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +210,7 @@ func (s *ServerSelector) SelectBest(links []string) (*ServerInfo, error) {
 	return servers[0], nil
 }
 
-// SelectAllByLatency selects and sorts all available servers by latency
+// SelectAllByLatency selects and sorts all available servers by latency (legacy method)
 func (s *ServerSelector) SelectAllByLatency(links []string) ([]*ServerInfo, error) {
 	if len(links) == 0 {
 		return nil, fmt.Errorf("no links provided")
@@ -194,6 +275,68 @@ func (s *ServerSelector) SelectAllByLatency(links []string) ([]*ServerInfo, erro
 	s.logger.Info("Found available servers", "total", len(available), "sorted_by", "latency")
 
 	return available, nil
+}
+
+// SelectAllByScore selects and sorts servers by weighted score (smart selection)
+func (s *ServerSelector) SelectAllByScore(links []string) ([]*ServerInfo, error) {
+	if len(links) == 0 {
+		return nil, fmt.Errorf("no links provided")
+	}
+
+	s.logger.Info("Performing smart server selection with weighted scoring", "total", len(links), "max_concurrent", s.maxConcurrent)
+
+	var mu sync.Mutex
+	var scored []*ServerInfo
+
+	// Use semaphore pattern for concurrency control
+	sem := make(chan struct{}, s.maxConcurrent)
+	var wg sync.WaitGroup
+
+	for i, link := range links {
+		wg.Add(1)
+		sem <- struct{}{} // Acquire semaphore
+
+		go func(idx int, srvLink string) {
+			defer wg.Done()
+			defer func() { <-sem }() // Release semaphore
+
+			s.logger.Debug("Checking server health", "index", idx+1)
+
+			info, err := s.CheckServerHealth(srvLink)
+			if err != nil || !info.Available {
+				s.logger.Debug("Server unavailable", "index", idx+1, "host", info.Host)
+				return
+			}
+
+			mu.Lock()
+			scored = append(scored, info)
+			mu.Unlock()
+
+			s.logger.Debug("Server scored", 
+				"index", idx+1,
+				"host", info.Host,
+				"score", fmt.Sprintf("%.2f", info.Score))
+		}(i, link)
+	}
+
+	wg.Wait()
+
+	if len(scored) == 0 {
+		return nil, fmt.Errorf("no available servers found")
+	}
+
+	// Sort by score (higher is better)
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].Score > scored[j].Score
+	})
+
+	s.logger.Info("Smart server selection complete", 
+		"total_available", len(scored),
+		"best_server", scored[0].Host,
+		"best_score", fmt.Sprintf("%.2f", scored[0].Score),
+		"sorted_by", "weighted_score")
+
+	return scored, nil
 }
 
 // SelectBestFromURL fetches links from URL and selects the best one

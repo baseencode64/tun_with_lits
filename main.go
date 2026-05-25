@@ -30,6 +30,10 @@ Options for --from-raw mode:
   --max-servers <n>             - maximum number of servers to check (default: 10)
   --timeout <duration>          - timeout per server health check (default: 5s)
   --ipv6                        - enable IPv6 support (default: false)
+  --dns-protection              - enable DNS leak protection (default: false)
+
+Prometheus metrics:
+  --metrics-port <port>         - enable Prometheus metrics endpoint (default: 0 = disabled)
 
 Logging options:
   --log-format <format>         - log format: text or json (default: text)
@@ -53,7 +57,11 @@ func main() {
 	var maxServers int = 10
 	var timeout time.Duration = 5 * time.Second
 	var enableIPv6 bool = false
+	var enableDNSProtection bool = false // New flag for DNS protection
 	
+	// Prometheus metrics configuration
+	var metricsPort int = 0 // Default: disabled
+
 	// Logging configuration
 	var logFormat string = "text"
 	var logLevel string = "info"
@@ -116,6 +124,17 @@ func main() {
 			}
 		case "--ipv6":
 			enableIPv6 = true
+		case "--dns-protection":
+			enableDNSProtection = true
+		case "--metrics-port":
+			if i+1 >= len(args) {
+				log.Fatal("--metrics-port requires a port number")
+			}
+			i++
+			fmt.Sscanf(args[i], "%d", &metricsPort)
+			if metricsPort <= 0 || metricsPort > 65535 {
+				log.Fatal("--metrics-port must be between 1 and 65535")
+			}
 		case "--log-format":
 			if i+1 >= len(args) {
 				log.Fatal("--log-format requires a value (text or json)")
@@ -212,6 +231,10 @@ func main() {
 		if !enableIPv6 && appConfig.Connection.EnableIPv6 {
 			enableIPv6 = true
 		}
+		
+		if !enableDNSProtection && appConfig.Connection.EnableDNSProtection {
+			enableDNSProtection = true
+		}
 
 		// Server selection settings (CLI overrides config)
 		if refreshInterval == 0 && appConfig.ServerSelection.RefreshInterval != "" {
@@ -251,6 +274,11 @@ func main() {
 		if logMaxAge == 28 && appConfig.Logging.MaxAge != 28 {
 			logMaxAge = appConfig.Logging.MaxAge
 		}
+		
+		// Metrics settings (CLI overrides config)
+		if metricsPort == 0 && appConfig.Connection.MetricsPort > 0 {
+			metricsPort = appConfig.Connection.MetricsPort
+		}
 	}
 
 	if clientLink == "" && !fromRaw {
@@ -270,16 +298,28 @@ func main() {
 	defer logCleanup()
 
 	vpn, err := client.NewClientWithOpts(client.Config{
-		TLSAllowInsecure: false,
-		Logger:           logger,
-		EnableIPv6:       enableIPv6,
+		TLSAllowInsecure:    false,
+		Logger:              logger,
+		EnableIPv6:          enableIPv6,
+		MetricsPort:         metricsPort,
+		EnableDNSProtection: enableDNSProtection,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	slog.Info("VPN client initialized", "metrics_port", metricsPort)
+	
 	if enableIPv6 {
 		slog.Info("IPv6 support enabled")
+	}
+	
+	if enableDNSProtection {
+		slog.Info("DNS leak protection enabled")
+	}
+	
+	if metricsPort > 0 {
+		slog.Info("Prometheus metrics enabled", "port", metricsPort, "endpoint", fmt.Sprintf("http://0.0.0.0:%d/metrics", metricsPort))
 	}
 
 	// Log configuration info
@@ -336,7 +376,7 @@ func main() {
 				return fmt.Errorf("failed to fetch from all %d URLs, last error: %w", len(rawURLs), lastFetchErr)
 			}
 
-			servers, selectErr := selector.SelectAllByLatency(links)
+			servers, selectErr := selector.SelectAllByScore(links)
 			if selectErr != nil {
 				return fmt.Errorf("select servers: %w", selectErr)
 			}

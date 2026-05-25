@@ -38,8 +38,14 @@ type ConnectionConfig struct {
 	// Enable IPv6 support
 	EnableIPv6 bool `yaml:"enable_ipv6"`
 	
+	// Enable DNS leak protection
+	EnableDNSProtection bool `yaml:"enable_dns_protection"`
+	
 	// TLS allow insecure certificates
 	TLSAllowInsecure bool `yaml:"tls_allow_insecure"`
+	
+	// Prometheus metrics endpoint port (0 = disabled)
+	MetricsPort int `yaml:"metrics_port"`
 }
 
 // ServerSelectionConfig holds server selection and refresh settings
@@ -112,14 +118,6 @@ func LoadConfig(filePath string) (*AppConfig, error) {
 
 // setDefaults sets default values for unspecified fields
 func (c *AppConfig) setDefaults() {
-	// Connection defaults
-	if !c.Connection.EnableIPv6 {
-		c.Connection.EnableIPv6 = false // Explicit default
-	}
-	if !c.Connection.TLSAllowInsecure {
-		c.Connection.TLSAllowInsecure = false // Explicit default
-	}
-
 	// Server selection defaults
 	if c.ServerSelection.MaxServers == 0 {
 		c.ServerSelection.MaxServers = 10

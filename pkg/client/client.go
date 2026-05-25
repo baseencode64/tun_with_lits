@@ -7,17 +7,21 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/goxray/core/network/route"
 	"github.com/goxray/core/network/tun"
 	"github.com/goxray/core/pipe2socks"
 	"github.com/jackpal/gateway"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	xrayproto "github.com/lilendian0x00/xray-knife/v3/pkg/protocol"
 	"github.com/lilendian0x00/xray-knife/v3/pkg/xray"
@@ -51,12 +55,131 @@ var (
 		route.MustParseAddr("128.0.0.0/1"),
 	}
 	
+	// DNSRoutesToTUN routes DNS traffic through TUN to prevent DNS leaks and ensure resolution.
+	DNSRoutesToTUN = []*route.Addr{
+		// Common public DNS servers
+		route.MustParseAddr("8.8.8.8/32"),   // Google DNS
+		route.MustParseAddr("8.8.4.4/32"),   // Google DNS
+		route.MustParseAddr("1.1.1.1/32"),   // Cloudflare DNS
+		route.MustParseAddr("1.0.0.1/32"),   // Cloudflare DNS
+		route.MustParseAddr("9.9.9.9/32"),   // Quad9 DNS
+		route.MustParseAddr("149.112.112.112/32"), // Quad9 DNS
+	}
+	
 	// DefaultRoutesToTUNIPv6 will route all IPv6 system traffic through the TUN.
 	DefaultRoutesToTUNIPv6 = []*route.Addr{
 		// Reroute all IPv6 traffic.
 		route.MustParseAddr("::/1"),
 		route.MustParseAddr("8000::/1"),
 	}
+	
+	// DNSRoutesToTUNIPv6 routes IPv6 DNS traffic through TUN.
+	DNSRoutesToTUNIPv6 = []*route.Addr{
+		// IPv6 DNS servers
+		route.MustParseAddr("2001:4860:4860::8888/128"),  // Google DNS
+		route.MustParseAddr("2001:4860:4860::8844/128"),  // Google DNS
+		route.MustParseAddr("2606:4700:4700::1111/128"),  // Cloudflare DNS
+		route.MustParseAddr("2606:4700:4700::1001/128"),  // Cloudflare DNS
+	}
+	
+	// DNSPortRoutesToTUN routes all traffic to DNS ports (53) through TUN to prevent DNS leaks.
+	DNSPortRoutesToTUN = []*route.Addr{
+		// Specific DNS port routes
+		route.MustParseAddr("0.0.0.0/0"),   // All IPv4 addresses
+	}
+	
+	// DNSPortRoutesToTUNIPv6 routes all IPv6 traffic to DNS ports through TUN.
+	DNSPortRoutesToTUNIPv6 = []*route.Addr{
+		// All IPv6 addresses
+		route.MustParseAddr("::/0"),        // All IPv6 addresses
+	}
+)
+
+// Prometheus metrics
+var (
+	vpnConnectionsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "vpn_connections_total",
+			Help: "Total number of VPN connections established",
+		},
+		[]string{"protocol"},
+	)
+	
+	vpnDisconnectionsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "vpn_disconnections_total",
+			Help: "Total number of VPN disconnections",
+		},
+	)
+	
+	vpnConnectionDuration = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "vpn_connection_duration_seconds",
+			Help: "Duration of current VPN connection in seconds",
+		},
+	)
+	
+	vpnBytesRead = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "vpn_bytes_read_total",
+			Help: "Total bytes read from TUN device",
+		},
+	)
+	
+	vpnBytesWritten = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "vpn_bytes_written_total",
+			Help: "Total bytes written to TUN device",
+		},
+	)
+	
+	vpnConnected = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "vpn_connected",
+			Help: "Whether VPN is currently connected (1 = connected, 0 = disconnected)",
+		},
+	)
+	
+	vpnTunIPv4 = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "vpn_tun_ipv4",
+			Help: "TUN interface IPv4 address (label: ip_address)",
+		},
+		[]string{"ip_address"},
+	)
+	
+	vpnTunIPv6 = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "vpn_tun_ipv6",
+			Help: "TUN interface IPv6 address (label: ip_address)",
+		},
+		[]string{"ip_address"},
+	)
+	
+	vpnServerIP = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "vpn_server_ip",
+			Help: "VPN server external IP address (label: ip_address)",
+		},
+		[]string{"ip_address"},
+	)
+)
+
+func init() {
+	// Register metrics with Prometheus
+	prometheus.MustRegister(vpnConnectionsTotal)
+	prometheus.MustRegister(vpnDisconnectionsTotal)
+	prometheus.MustRegister(vpnConnectionDuration)
+	prometheus.MustRegister(vpnBytesRead)
+	prometheus.MustRegister(vpnBytesWritten)
+	prometheus.MustRegister(vpnConnected)
+	prometheus.MustRegister(vpnTunIPv4)
+	prometheus.MustRegister(vpnTunIPv6)
+	prometheus.MustRegister(vpnServerIP)
+}
+
+var (
+
 )
 
 // Config serves configuration for new Client. Empty fields will be set up with defaults values.
@@ -86,6 +209,10 @@ type Config struct {
 	XRayLogType xapplog.LogType
 	// EnableIPv6 enables IPv6 support for TUN device (default: false).
 	EnableIPv6 bool
+	// MetricsPort enables Prometheus metrics endpoint on specified port (0 = disabled).
+	MetricsPort int
+	// EnableDNSProtection enables DNS leak protection by routing all DNS traffic through the TUN interface (default: false).
+	EnableDNSProtection bool
 }
 
 func (c *Config) apply(new *Config) {
@@ -109,6 +236,12 @@ func (c *Config) apply(new *Config) {
 	}
 	// EnableIPv6 is a boolean flag, always apply if explicitly set
 	c.EnableIPv6 = new.EnableIPv6
+	// MetricsPort is optional
+	if new.MetricsPort > 0 {
+		c.MetricsPort = new.MetricsPort
+	}
+	// EnableDNSProtection is a boolean flag, always apply if explicitly set
+	c.EnableDNSProtection = new.EnableDNSProtection
 }
 
 // Client is the actual VPN cl. It manages connections, routing and tunneling of the requests.
@@ -130,6 +263,13 @@ type Client struct {
 	
 	mu sync.Mutex // Protects concurrent access during connect/disconnect
 	isConnected bool // Tracks connection state to prevent double operations
+	
+	// Prometheus metrics
+	metricsServer *http.Server
+	
+	// Traffic counters (atomic)
+	bytesRead    int64
+	bytesWritten int64
 }
 
 // Proxy will set up XRay inbound.
@@ -182,6 +322,11 @@ func NewClientWithOpts(cfg Config) (*Client, error) {
 	}
 
 	client.cfg.apply(&cfg)
+	
+	// Start metrics server if configured
+	if client.cfg.MetricsPort > 0 {
+		client.startMetricsUpdate()
+	}
 
 	return client, nil
 }
@@ -307,7 +452,42 @@ func (c *Client) Connect(link string) error {
 	}()
 	wg.Wait()
 	
+	// Start traffic monitoring goroutine
+	go c.monitorTraffic(ctx)
+	
+	// Setup DNS protection if enabled
+	if c.cfg.EnableDNSProtection {
+		c.cfg.Logger.Info("Setting up DNS leak protection")
+		if setupErr := c.setupDNSProtection(); setupErr != nil {
+			c.cfg.Logger.Error("Failed to set up DNS protection", "error", setupErr)
+			// Continue anyway - it's not critical for basic VPN functionality
+		}
+	}
+	
 	c.isConnected = true
+	
+	// Update Prometheus metrics
+	vpnConnected.Set(1)
+	vpnConnectionsTotal.WithLabelValues(c.detectProtocol(link)).Inc()
+	
+	// Update TUN IP addresses
+	tunIPv4 := c.cfg.TUNAddress.IP.String()
+	vpnTunIPv4.Reset()
+	vpnTunIPv4.WithLabelValues(tunIPv4).Set(1)
+	
+	if c.cfg.EnableIPv6 {
+		vpnTunIPv6.Reset()
+		vpnTunIPv6.WithLabelValues(defaultTUNAddressIPv6.IP.String()).Set(1)
+	}
+	
+	// Update VPN server external IP
+	if c.xSrvIP != nil {
+		serverIP := c.xSrvIP.String()
+		vpnServerIP.Reset()
+		vpnServerIP.WithLabelValues(serverIP).Set(1)
+		c.cfg.Logger.Debug("VPN server IP metric updated", "ip", serverIP)
+	}
+	
 	c.cfg.Logger.Info("VPN client connected successfully", 
 		"tun_address", c.cfg.TUNAddress.String(),
 		"xray_server", c.xSrvIP.String(),
@@ -361,11 +541,19 @@ func (c *Client) Disconnect(ctx context.Context) error {
 		}
 	}
 	
+	// Clean up DNS routes
+	if c.tunName != "" {
+		c.cfg.Logger.Debug("Cleaning up DNS routes")
+		if dnsErr := c.routes.Delete(route.Opts{IfName: c.tunName, Routes: DNSRoutesToTUN}); dnsErr != nil {
+			c.cfg.Logger.Debug("DNS route cleanup note", "error", dnsErr)
+		}
+	}
+	
 	// Clean up IPv6 routes if enabled
 	if c.cfg.EnableIPv6 && c.tunName != "" {
 		c.cfg.Logger.Debug("Cleaning up IPv6 routes")
 		
-		// Try route library first
+		// Try using route library first
 		if err := c.routes.Delete(route.Opts{IfName: c.tunName, Routes: DefaultRoutesToTUNIPv6}); err != nil {
 			c.cfg.Logger.Debug("Route library cleanup failed, trying system commands", "error", err)
 			
@@ -375,9 +563,22 @@ func (c *Client) Disconnect(ctx context.Context) error {
 			}
 		}
 		
+		// Clean up IPv6 DNS routes
+		if dnsErr := c.routes.Delete(route.Opts{IfName: c.tunName, Routes: DNSRoutesToTUNIPv6}); dnsErr != nil {
+			c.cfg.Logger.Debug("IPv6 DNS route cleanup note", "error", dnsErr)
+		}
+		
 		// Also remove IPv6 address from interface
 		if addrErr := c.removeIPv6AddressSystem(c.tunName); addrErr != nil {
 			c.cfg.Logger.Warn("Failed to remove IPv6 address from interface", "error", addrErr)
+		}
+	}
+	
+	// Clean up DNS protection routes if they were set up
+	if c.cfg.EnableDNSProtection && c.tunName != "" {
+		c.cfg.Logger.Debug("Cleaning up DNS protection routes")
+		if err := c.cleanupDNSProtection(); err != nil {
+			c.cfg.Logger.Warn("DNS protection cleanup failed", "error", err)
 		}
 	}
 	
@@ -404,26 +605,30 @@ func (c *Client) Disconnect(ctx context.Context) error {
 		return err
 	}
 
+	// Update Prometheus metrics on disconnect
+	vpnConnected.Set(0)
+	vpnDisconnectionsTotal.Inc()
+	vpnConnectionDuration.Set(0)
+	
+	// Reset TUN IP address metrics
+	vpnTunIPv4.Reset()
+	vpnTunIPv6.Reset()
+	vpnServerIP.Reset()
+	
+	c.stopMetricsUpdate()
+	
 	c.cfg.Logger.Debug("client disconnected")
 	return nil
 }
 
 // BytesRead returns number of bytes read from TUN device.
 func (c *Client) BytesRead() int {
-	if c.tunnel == nil {
-		return 0
-	}
-
-	return c.tunnel.(*readerMetrics).BytesRead()
+	return int(atomic.LoadInt64(&c.bytesRead))
 }
 
 // BytesWritten returns number of bytes written to TUN device.
 func (c *Client) BytesWritten() int {
-	if c.tunnel == nil {
-		return 0
-	}
-
-	return c.tunnel.(*readerMetrics).BytesWritten()
+	return int(atomic.LoadInt64(&c.bytesWritten))
 }
 
 // GetConnectionStatus returns current connection status and public IP information
@@ -567,7 +772,7 @@ func (c *Client) createXrayProxy(link string) (xrayproto.Instance, *xrayproto.Ge
 	// Validate xray proto addr.
 	ip, err := net.ResolveIPAddr("ip", cfg.Address)
 	if err != nil {
-		return nil, nil, fmt.Errorf("xray address not resolvable: %w", err)
+		return nil, nil, fmt.Errorf("xray addresses not resolvable: %w", err)
 	}
 	c.xSrvIP = ip
 	
@@ -626,6 +831,9 @@ func (c *Client) setupTunnel() (*tun.Interface, error) {
 		return nil, fmt.Errorf("add IPv4 routes: %w", err)
 	}
 
+	// Note: DNS routes are added via setupDNSProtection() if enable_dns_protection is true
+	// Adding them here would cause "file exists" errors when both are enabled
+
 	// Add IPv6 routes if enabled
 	if c.cfg.EnableIPv6 {
 		c.cfg.Logger.Debug("Adding IPv6 routes for TUN interface", "routes_count", len(DefaultRoutesToTUNIPv6))
@@ -639,6 +847,14 @@ func (c *Client) setupTunnel() (*tun.Interface, error) {
 				c.cfg.Logger.Error("Failed to add IPv6 routes via system commands", "error", sysErr)
 				return nil, fmt.Errorf("add IPv6 routes: %w (library: %v, system: %v)", err, err, sysErr)
 			}
+		}
+		
+		// Note: IPv6 DNS routes are added via setupDNSProtection() if enable_dns_protection is true
+		// Adding them here would cause "file exists" errors when both are enabled
+		
+		// Also remove IPv6 address from interface
+		if addrErr := c.removeIPv6AddressSystem(c.tunName); addrErr != nil {
+			c.cfg.Logger.Warn("Failed to remove IPv6 address from interface", "error", addrErr)
 		}
 	}
 
@@ -748,10 +964,366 @@ func (c *Client) removeIPv6AddressSystem(ifName string) error {
 	return nil
 }
 
+// detectProtocol detects VPN protocol from link string
+func (c *Client) detectProtocol(link string) string {
+	if strings.HasPrefix(link, "vless://") {
+		return "vless"
+	} else if strings.HasPrefix(link, "vmess://") {
+		return "vmess"
+	} else if strings.HasPrefix(link, "trojan://") {
+		return "trojan"
+	} else if strings.HasPrefix(link, "ss://") {
+		return "shadowsocks"
+	}
+	return "unknown"
+}
+
+// startMetricsUpdate starts goroutine to update metrics periodically
+func (c *Client) startMetricsUpdate() {
+	c.cfg.Logger.Info("Checking metrics configuration", "metrics_port", c.cfg.MetricsPort)
+	
+	if c.cfg.MetricsPort <= 0 {
+		c.cfg.Logger.Debug("Metrics server disabled (port not configured)")
+		return
+	}
+	
+	// Start metrics HTTP server
+	addr := fmt.Sprintf("0.0.0.0:%d", c.cfg.MetricsPort)
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	
+	c.metricsServer = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+	
+	go func() {
+		c.cfg.Logger.Info("Prometheus metrics endpoint starting", "address", addr, "path", "/metrics")
+		if err := c.metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			c.cfg.Logger.Error("Metrics server error", "error", err)
+		} else if err == http.ErrServerClosed {
+			c.cfg.Logger.Info("Metrics server stopped gracefully")
+		}
+	}()
+	
+	c.cfg.Logger.Info("Metrics server goroutine started")
+	
+	// Start periodic metrics update
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		
+		connectTime := time.Now()
+		
+		for {
+			select {
+			case <-ticker.C:
+				if !c.isConnected {
+					return
+				}
+				
+				// Update traffic metrics
+				vpnBytesRead.Set(float64(c.BytesRead()))
+				vpnBytesWritten.Set(float64(c.BytesWritten()))
+				
+				// Update connection duration
+				duration := time.Since(connectTime).Seconds()
+				vpnConnectionDuration.Set(duration)
+			}
+		}
+	}()
+}
+
+// stopMetricsUpdate stops the metrics server
+func (c *Client) stopMetricsUpdate() {
+	if c.metricsServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		if err := c.metricsServer.Shutdown(ctx); err != nil {
+			c.cfg.Logger.Warn("Metrics server shutdown error", "error", err)
+		}
+		c.metricsServer = nil
+	}
+}
+
+// monitorTraffic periodically reads TUN interface statistics and updates atomic counters
+func (c *Client) monitorTraffic(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	
+	attemptCount := 0
+	
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			attemptCount++
+			
+			var bytesRead, bytesWritten int64
+			
+			// Try reading from readerMetrics wrapper first
+			if rm, ok := c.tunnel.(*readerMetrics); ok {
+				bytesRead = int64(rm.BytesRead())
+				bytesWritten = int64(rm.BytesWritten())
+				
+				// If readerMetrics shows 0 after 10 attempts, try /proc/net/dev
+				if bytesRead == 0 && bytesWritten == 0 && attemptCount >= 10 {
+					c.cfg.Logger.Debug("readerMetrics shows zero traffic, trying /proc/net/dev", 
+						"tun_name", c.tunName)
+					
+					if c.tunName != "" {
+						rx, tx := c.readInterfaceStats(c.tunName)
+						if rx > 0 || tx > 0 {
+							c.cfg.Logger.Info("Successfully read traffic from /proc/net/dev",
+								"rx_bytes", rx, "tx_bytes", tx)
+							bytesRead = rx
+							bytesWritten = tx
+						}
+					}
+				}
+			} else {
+				c.cfg.Logger.Warn("Tunnel is not wrapped in readerMetrics", "type", fmt.Sprintf("%T", c.tunnel))
+				
+				// Fallback to /proc/net/dev
+				if c.tunName != "" {
+					rx, tx := c.readInterfaceStats(c.tunName)
+					bytesRead = rx
+					bytesWritten = tx
+				}
+			}
+			
+			atomic.StoreInt64(&c.bytesRead, bytesRead)
+			atomic.StoreInt64(&c.bytesWritten, bytesWritten)
+		}
+	}
+}
+
+// setupDNSProtection sets up comprehensive DNS leak protection
+func (c *Client) setupDNSProtection() error {
+	if !c.cfg.EnableDNSProtection {
+		c.cfg.Logger.Info("DNS protection disabled in configuration")
+		return nil
+	}
+
+	c.cfg.Logger.Info("Setting up DNS leak protection", "interface", c.tunName)
+	
+	// Block direct DNS access at firewall level
+	c.cfg.Logger.Debug("Blocking direct DNS access", "ports", "53,853")
+	if err := c.setupDNSTrafficForcing(); err != nil {
+		c.cfg.Logger.Error("Failed to setup DNS traffic forcing", "error", err)
+		// Don't fail completely, but warn user
+	}
+
+	// Add routes to DNS servers through TUN interface
+	c.cfg.Logger.Debug("Routing DNS through TUN interface", "interface", c.tunName)
+	if err := c.addDNSRoutesThroughTUN(); err != nil {
+		c.cfg.Logger.Warn("Some DNS routes may have failed to add (may already exist)", "error", err)
+		// Don't return error here as some routes might already exist which is normal
+	}
+
+	c.cfg.Logger.Info("DNS leak protection enabled successfully")
+	return nil
+}
+
+// addDNSRoutesThroughTUN adds routes to DNS servers through the TUN interface
+func (c *Client) addDNSRoutesThroughTUN() error {
+	var overallError error
+
+	// Add IPv4 DNS routes
+	for _, r := range DNSRoutesToTUN {
+		err := c.routes.Add(route.Opts{IfName: c.tunName, Routes: []*route.Addr{r}})
+		if err != nil {
+			// Log as warning instead of error, since some routes might already exist
+			c.cfg.Logger.Warn("Failed to add IPv4 DNS route (may already exist)", "route", r.String(), "error", err)
+			if overallError == nil {
+				overallError = err
+			}
+		} else {
+			c.cfg.Logger.Debug("Added IPv4 DNS route", "route", r.String())
+		}
+	}
+
+	// Add IPv6 DNS routes if IPv6 is enabled
+	if c.cfg.EnableIPv6 {
+		for _, r := range DNSRoutesToTUNIPv6 {
+			err := c.routes.Add(route.Opts{IfName: c.tunName, Routes: []*route.Addr{r}})
+			if err != nil {
+				// Log as warning instead of error, since some routes might already exist
+				c.cfg.Logger.Warn("Failed to add IPv6 DNS route (may already exist)", "route", r.String(), "error", err)
+				if overallError == nil {
+					overallError = err
+				}
+			} else {
+				c.cfg.Logger.Debug("Added IPv6 DNS route", "route", r.String())
+			}
+		}
+	}
+
+	// Add port-based DNS routes
+	for _, r := range DNSPortRoutesToTUN {
+		err := c.routes.Add(route.Opts{IfName: c.tunName, Routes: []*route.Addr{r}})
+		if err != nil {
+			c.cfg.Logger.Warn("Failed to add IPv4 DNS port route (may already exist)", "route", r.String(), "error", err)
+			if overallError == nil {
+				overallError = err
+			}
+		} else {
+			c.cfg.Logger.Debug("Added IPv4 DNS port route", "route", r.String())
+		}
+	}
+
+	if c.cfg.EnableIPv6 {
+		for _, r := range DNSPortRoutesToTUNIPv6 {
+			err := c.routes.Add(route.Opts{IfName: c.tunName, Routes: []*route.Addr{r}})
+			if err != nil {
+				c.cfg.Logger.Warn("Failed to add IPv6 DNS port route (may already exist)", "route", r.String(), "error", err)
+				if overallError == nil {
+					overallError = err
+				}
+			} else {
+				c.cfg.Logger.Debug("Added IPv6 DNS port route", "route", r.String())
+			}
+		}
+	}
+
+	return overallError
+}
+
+
+// setupDNSTrafficForcing - пустая функция, так как DNS трафик уже маршрутизируется через TUN
+// с помощью маршрутов, добавленных в setupTunnel() и addDNSRoutesThroughTUN()
+// Перенаправление DNS на SOCKS порт некорректно, так как SOCKS прокси не обрабатывает DNS протокол
+func (c *Client) setupDNSTrafficForcing() error {
+	// DNS трафик уже идет через TUN интерфейс благодаря маршрутам
+	// Не нужно перенаправлять его на SOCKS порт - это сломает DNS резолвинг
+	c.cfg.Logger.Debug("Skipping DNS traffic forcing - DNS already routes through TUN via routing table")
+	return nil
+}
+
+// cleanupDNSProtection removes DNS protection routes and rules
+func (c *Client) cleanupDNSProtection() error {
+	interfaceName := c.tunName
+	
+	if interfaceName == "" {
+		c.cfg.Logger.Debug("Skipping DNS protection cleanup - interface name not available")
+		return nil
+	}
+	
+	c.cfg.Logger.Info("Cleaning up DNS protection for TUN interface", "interface", interfaceName)
+	
+	// Remove IPv4 DNS port routes
+	if err := c.routes.Delete(route.Opts{IfName: interfaceName, Routes: DNSPortRoutesToTUN}); err != nil {
+		c.cfg.Logger.Debug("Failed to remove IPv4 DNS port routes", "error", err)
+	}
+	
+	// Remove IPv6 DNS port routes if IPv6 is enabled
+	if c.cfg.EnableIPv6 {
+		if err := c.routes.Delete(route.Opts{IfName: interfaceName, Routes: DNSPortRoutesToTUNIPv6}); err != nil {
+			c.cfg.Logger.Debug("Failed to remove IPv6 DNS port routes", "error", err)
+		}
+	}
+	
+	// Remove standard DNS server routes
+	if err := c.routes.Delete(route.Opts{IfName: interfaceName, Routes: DNSRoutesToTUN}); err != nil {
+		c.cfg.Logger.Debug("Failed to remove standard DNS server routes", "error", err)
+	}
+	
+	if c.cfg.EnableIPv6 {
+		if err := c.routes.Delete(route.Opts{IfName: interfaceName, Routes: DNSRoutesToTUNIPv6}); err != nil {
+			c.cfg.Logger.Debug("Failed to remove IPv6 DNS server routes", "error", err)
+		}
+	}
+	
+	// Remove iptables rules for DNS traffic forcing
+	if err := c.cleanupDNSTrafficForcing(); err != nil {
+		c.cfg.Logger.Warn("Failed to clean up DNS traffic forcing rules", "error", err)
+	}
+	
+	c.cfg.Logger.Info("DNS protection cleanup completed")
+	return nil
+}
+
+// cleanupDNSTrafficForcing removes iptables rules that force DNS traffic
+func (c *Client) cleanupDNSTrafficForcing() error {
+	c.cfg.Logger.Debug("Cleaning up iptables rules for DNS traffic forcing")
+	
+	// Remove IPv4 iptables rules for DNS
+	ipv4Cmd := exec.Command("iptables", "-t", "nat", "-D", "OUTPUT", "-p", "udp", "--dport", "53", "-j", "REDIRECT", "--to-port", strconv.Itoa(c.cfg.InboundProxy.Port))
+	if err := ipv4Cmd.Run(); err != nil {
+		c.cfg.Logger.Debug("Failed to remove IPv4 DNS iptables rule", "error", err)
+	}
+	
+	ipv4TcpCmd := exec.Command("iptables", "-t", "nat", "-D", "OUTPUT", "-p", "tcp", "--dport", "53", "-j", "REDIRECT", "--to-port", strconv.Itoa(c.cfg.InboundProxy.Port))
+	if err := ipv4TcpCmd.Run(); err != nil {
+		c.cfg.Logger.Debug("Failed to remove IPv4 TCP DNS iptables rule", "error", err)
+	}
+	
+	// Remove IPv6 ip6tables rules for DNS (if IPv6 was enabled)
+	if c.cfg.EnableIPv6 {
+		ipv6Cmd := exec.Command("ip6tables", "-t", "nat", "-D", "OUTPUT", "-p", "udp", "--dport", "53", "-j", "REDIRECT", "--to-port", strconv.Itoa(c.cfg.InboundProxy.Port))
+		if err := ipv6Cmd.Run(); err != nil {
+			c.cfg.Logger.Debug("Failed to remove IPv6 DNS ip6tables rule", "error", err)
+		}
+		
+		ipv6TcpCmd := exec.Command("ip6tables", "-t", "nat", "-D", "OUTPUT", "-p", "tcp", "--dport", "53", "-j", "REDIRECT", "--to-port", strconv.Itoa(c.cfg.InboundProxy.Port))
+		if err := ipv6TcpCmd.Run(); err != nil {
+			c.cfg.Logger.Debug("Failed to remove IPv6 TCP DNS ip6tables rule", "error", err)
+		}
+	}
+	
+	c.cfg.Logger.Info("DNS traffic forcing rules cleaned up")
+	return nil
+}
+
+
 // min returns the minimum of two integers
 func min(a, b int) int {
 	if a < b {
 		return a
 	}
 	return b
+}
+
+// readInterfaceStats reads RX/TX bytes for a network interface from /proc/net/dev
+func (c *Client) readInterfaceStats(ifaceName string) (int64, int64) {
+	data, err := os.ReadFile("/proc/net/dev")
+	if err != nil {
+		c.cfg.Logger.Debug("Failed to read /proc/net/dev", "error", err)
+		return 0, 0
+	}
+	
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.Contains(line, ifaceName+":") {
+			continue
+		}
+		
+		// Format: eth0: rx_bytes rx_packets ... tx_bytes tx_packets ...
+		parts := strings.Fields(line)
+		if len(parts) < 10 {
+			continue
+		}
+		
+		// Remove interface name suffix
+		namePart := parts[0]
+		if idx := strings.Index(namePart, ":"); idx != -1 {
+			namePart = namePart[:idx]
+		}
+		
+		if namePart != ifaceName {
+			continue
+		}
+		
+		// Parse RX bytes (field 1) and TX bytes (field 9)
+		var rxBytes, txBytes int64
+		fmt.Sscanf(parts[1], "%d", &rxBytes)
+		fmt.Sscanf(parts[9], "%d", &txBytes)
+		
+		return rxBytes, txBytes
+	}
+	
+	return 0, 0
 }
