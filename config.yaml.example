@@ -35,6 +35,25 @@ server_selection:
   # Timeout per server health check (default: "5s")
   timeout: "5s"
 
+# Reconnection settings (persistence & auto-reconnect)
+# Controls behavior when all servers in the list are exhausted.
+# The client will re-fetch the server list and retry with exponential backoff.
+reconnection:
+  # Max reconnection attempts (0 = unlimited retries, default: 0)
+  max_retries: 0
+  
+  # Initial backoff duration (default: "5s")
+  # After first failure, waits this long before retrying
+  min_backoff: "5s"
+  
+  # Maximum backoff duration (default: "5m")
+  # Backoff grows exponentially up to this limit
+  max_backoff: "5m"
+  
+  # Exponential backoff multiplier (default: 2.0)
+  # Each retry waits: min_backoff * backoff_factor^attempt (capped at max_backoff)
+  backoff_factor: 2.0
+
 # Logging configuration
 logging:
   # Log format: "text" or "json" (default: "text")

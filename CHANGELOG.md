@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-05-25
+
+### Added
+
+- **Connection persistence & auto-reconnect** — новый механизм автоматического переподключения при исчерпании всех серверов в списке:
+  - `Reconnector` — управление переподключением с exponential backoff (5s → 10s → 20s → ... → 5m)
+  - Jitter (±25%) для распределения нагрузки при параллельных клиентах
+  - Callback для обновления списка серверов перед каждой попыткой
+  - Graceful stop через контекст или вызов `Stop()`
+  - Подробное логирование каждой попытки переподключения
+
+- **Новые CLI флаги реконнекта:**
+  - `--max-retries <n>` — макс. количество попыток (0 = безлимитно, default: 0)
+  - `--min-backoff <duration>` — начальная задержка (default: 5s)
+  - `--max-backoff <duration>` — максимальная задержка (default: 5m)
+  - `--backoff-factor <factor>` — множитель экспоненты (default: 2.0)
+
+- **Новая секция YAML конфигурации:**
+
+  ```yaml
+  reconnection:
+    max_retries: 0
+    min_backoff: "5s"
+    max_backoff: "5m"
+    backoff_factor: 2.0
+  ```
+
+- **Новый публичный API в пакете `pkg/client`:**
+  - `reconnector.go` — `Reconnector`, `ReconnectionConfig`, `ErrReconnectionStopped`
+  - `NewReconnector(logger, cfg, reconnectFunc, refreshFunc)` — создание реконнектора
+  - `NewVPNConnectorWithReconnect(client, selector, logger, reconnCfg)` — коннектор с кастомным реконнектом
+  - `ErrAllServersExhausted` — sentinel error для определения ситуации "все серверы перепробованы"
+
+- **Тесты:** 12 тестов для Reconnector (backoff вычисления, retry до успеха, max retries exceeded, context cancellation, Stop, refresh callback, unlimited retries, reset, defaults)
+
 ## [1.5.14] - 2026-05-25
 
 ### Fixed

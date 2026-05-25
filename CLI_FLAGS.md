@@ -109,6 +109,93 @@ sudo goxray --from-raw https://example.com/links.txt --max-servers 20
 
 ---
 
+### 🔗 Параметры переподключения (Connection Persistence & Auto-Reconnect)
+
+Управляют поведением клиента, когда все серверы в списке исчерпаны. Клиент автоматически переходит в режим переподключения с экспоненциальной задержкой.
+
+#### Максимальное количество попыток
+
+```bash
+--max-retries <n>  # Максимальное количество попыток переподключения
+```
+
+**Пример:**
+
+```bash
+sudo goxray --from-raw https://example.com/links.txt --max-retries 5
+```
+
+**По умолчанию:** `0` (безлимитные попытки, до остановки через Ctrl+C)
+
+#### Минимальная задержка
+
+```bash
+--min-backoff <duration>  # Начальная задержка перед переподключением
+```
+
+**Формат:** `5s`, `10s`, `30s` и т.д.
+
+**Пример:**
+
+```bash
+sudo goxray --from-raw https://example.com/links.txt --min-backoff 10s
+```
+
+**По умолчанию:** `5s`
+
+#### Максимальная задержка
+
+```bash
+--max-backoff <duration>  # Максимальная задержка перед переподключением
+```
+
+**Формат:** `5m`, `10m`, `30m` и т.д.
+
+**Пример:**
+
+```bash
+sudo goxray --from-raw https://example.com/links.txt --max-backoff 10m
+```
+
+**По умолчанию:** `5m`
+
+#### Коэффициент экспоненциального роста
+
+```bash
+--backoff-factor <factor>  # Множитель для экспоненциальной задержки
+```
+
+**Пример:**
+
+```bash
+sudo goxray --from-raw https://example.com/links.txt --backoff-factor 3.0
+```
+
+**По умолчанию:** `2.0`
+
+**Формула расчета:**
+
+```
+backoff(n) = min(min_backoff × factor^(n-1) + jitter, max_backoff)
+```
+
+**Пример последовательности (по умолчанию):**
+
+```
+Attempt 1: 5s    (min_backoff)
+Attempt 2: 10s   (5s × 2.0)
+Attempt 3: 20s   (10s × 2.0)
+Attempt 4: 40s   (20s × 2.0)
+Attempt 5: 80s   (40s × 2.0)
+Attempt 6: 160s  (80s × 2.0)
+Attempt 7: 5m    (capped at max_backoff)
+...
+```
+
+_Фактическое время может отличаться на ±25% из-за jitter для распределения нагрузки._
+
+---
+
 ### ⏱️ Таймауты
 
 #### Таймаут проверки сервера
@@ -331,13 +418,27 @@ connection:
 # server_selection - настройки выбора сервера
 server_selection:
   # Интервал обновления списка серверов (например, "5m", "10m", "1h")
-  # refresh_interval: "10m"
+  refresh_interval: "10m"
 
   # Максимальное количество серверов для проверки
   max_servers: 10
 
   # Таймаут проверки каждого сервера
   timeout: "5s"
+
+# reconnection - настройки переподключения (persistence & auto-reconnect)
+reconnection:
+  # Максимальное количество попыток (0 = безлимитно)
+  max_retries: 0
+
+  # Начальная задержка перед переподключением
+  min_backoff: "5s"
+
+  # Максимальная задержка перед переподключением
+  max_backoff: "5m"
+
+  # Множитель экспоненциальной задержки
+  backoff_factor: 2.0
 
 # logging - настройки логирования
 logging:
@@ -394,6 +495,27 @@ sudo goxray "vless://uuid@server:443?type=tcp&security=reality&..."
 sudo goxray --from-raw https://example.com/links.txt
 ```
 
+### Пример 2a: С авто-переподключением
+
+```bash
+sudo goxray \
+  --from-raw https://example.com/links.txt \
+  --max-retries 10 \
+  --min-backoff 5s \
+  --max-backoff 10m \
+  --backoff-factor 2.0
+```
+
+**Что происходит:**
+
+1. Загружается список серверов
+2. При неудаче подключения ко всем серверам → ждет 5с
+3. Перезагружает список серверов
+4. Пробует снова
+5. При неудаче → ждет 10с → 20с → 40с ... (до 10м)
+6. После 10 попыток → выход с ошибкой
+7. Ctrl+C в любой момент → graceful shutdown
+
 ### Пример 3: Полная конфигурация с логированием
 
 ```bash
@@ -430,6 +552,12 @@ server_selection:
   refresh_interval: "10m"
   max_servers: 15
   timeout: "10s"
+
+reconnection:
+  max_retries: 0
+  min_backoff: "5s"
+  max_backoff: "5m"
+  backoff_factor: 2.0
 
 logging:
   format: "json"

@@ -32,6 +32,12 @@ Options for --from-raw mode:
   --ipv6                        - enable IPv6 support (default: false)
   --dns-protection              - enable DNS leak protection (default: false)
 
+Reconnection options (auto-reconnect when all servers fail):
+  --max-retries <n>             - max reconnection attempts (0 = unlimited, default: 0)
+  --min-backoff <duration>      - initial backoff between reconnections (default: 5s)
+  --max-backoff <duration>      - max backoff between reconnections (default: 5m)
+  --backoff-factor <factor>     - exponential backoff multiplier (default: 2.0)
+
 Prometheus metrics:
   --metrics-port <port>         - enable Prometheus metrics endpoint (default: 0 = disabled)
 
@@ -57,8 +63,8 @@ func main() {
 	var maxServers int = 10
 	var timeout time.Duration = 5 * time.Second
 	var enableIPv6 bool = false
-	var enableDNSProtection bool = false // New flag for DNS protection
-	
+	var enableDNSProtection bool = false
+
 	// Prometheus metrics configuration
 	var metricsPort int = 0 // Default: disabled
 
@@ -69,6 +75,12 @@ func main() {
 	var logMaxSize int = 100
 	var logMaxBackups int = 3
 	var logMaxAge int = 28
+
+	// Reconnection configuration
+	var reconnectMaxRetries int = client.DefaultMaxRetries     // 0 = unlimited
+	var reconnectMinBackoff time.Duration = client.DefaultMinBackoff   // 5s
+	var reconnectMaxBackoff time.Duration = client.DefaultMaxBackoff   // 5m
+	var reconnectBackoffFactor float64 = client.DefaultBackoffFactor   // 2.0
 
 	// Config file path
 	var configFile string = ""
@@ -186,6 +198,44 @@ func main() {
 			if logMaxAge < 0 {
 				log.Fatal("--log-max-age cannot be negative")
 			}
+		case "--max-retries":
+			if i+1 >= len(args) {
+				log.Fatal("--max-retries requires a value")
+			}
+			i++
+			fmt.Sscanf(args[i], "%d", &reconnectMaxRetries)
+			if reconnectMaxRetries < 0 {
+				log.Fatal("--max-retries cannot be negative (0 = unlimited)")
+			}
+		case "--min-backoff":
+			if i+1 >= len(args) {
+				log.Fatal("--min-backoff requires a duration (e.g., 5s, 10s)")
+			}
+			i++
+			var err error
+			reconnectMinBackoff, err = time.ParseDuration(args[i])
+			if err != nil {
+				log.Fatalf("Invalid min-backoff format: %v", err)
+			}
+		case "--max-backoff":
+			if i+1 >= len(args) {
+				log.Fatal("--max-backoff requires a duration (e.g., 5m, 10m)")
+			}
+			i++
+			var err error
+			reconnectMaxBackoff, err = time.ParseDuration(args[i])
+			if err != nil {
+				log.Fatalf("Invalid max-backoff format: %v", err)
+			}
+		case "--backoff-factor":
+			if i+1 >= len(args) {
+				log.Fatal("--backoff-factor requires a value (e.g., 2.0)")
+			}
+			i++
+			fmt.Sscanf(args[i], "%f", &reconnectBackoffFactor)
+			if reconnectBackoffFactor <= 1.0 {
+				log.Fatal("--backoff-factor must be > 1.0")
+			}
 		default:
 			// Positional argument (direct link)
 			if clientLink == "" {
@@ -253,6 +303,20 @@ func main() {
 			if err != nil {
 				log.Fatalf("Invalid timeout in config: %v", err)
 			}
+		}
+
+		// Reconnection settings (CLI overrides config)
+		if reconnectMaxRetries == client.DefaultMaxRetries && appConfig.Reconnection.MaxRetries > 0 {
+			reconnectMaxRetries = appConfig.Reconnection.MaxRetries
+		}
+		if reconnectMinBackoff == client.DefaultMinBackoff && appConfig.Reconnection.MinBackoff > 0 {
+			reconnectMinBackoff = appConfig.Reconnection.MinBackoff
+		}
+		if reconnectMaxBackoff == client.DefaultMaxBackoff && appConfig.Reconnection.MaxBackoff > 0 {
+			reconnectMaxBackoff = appConfig.Reconnection.MaxBackoff
+		}
+		if reconnectBackoffFactor == client.DefaultBackoffFactor && appConfig.Reconnection.BackoffFactor > 1.0 {
+			reconnectBackoffFactor = appConfig.Reconnection.BackoffFactor
 		}
 
 		// Logging settings (CLI overrides config)
@@ -331,6 +395,13 @@ func main() {
 		"max_backups", logMaxBackups,
 		"max_age_days", logMaxAge)
 
+	// Log reconnection configuration
+	slog.Info("Reconnection configuration",
+		"max_retries", reconnectMaxRetries,
+		"min_backoff", reconnectMinBackoff,
+		"max_backoff", reconnectMaxBackoff,
+		"backoff_factor", reconnectBackoffFactor)
+
 	// If using raw URL(s), fetch and select servers with fallback support
 	if fromRaw {
 		// Build list of URLs to try (support multiple URLs with fallback)
@@ -351,13 +422,28 @@ func main() {
 		loggerAdapter := client.NewSlogAdapter(logger)
 		selector := client.NewServerSelector(loggerAdapter, timeout, maxServers)
 
-		// Initial fetch and connect with URL fallback
-		connectToServers := func() error {
+		// Reconnection config
+		reconnCfg := client.ReconnectionConfig{
+			MaxRetries:    reconnectMaxRetries,
+			MinBackoff:    reconnectMinBackoff,
+			MaxBackoff:    reconnectMaxBackoff,
+			BackoffFactor: reconnectBackoffFactor,
+		}
+
+		// createConnector creates a new VPN connector and connects to servers.
+		// Returns the connector on success, or error if all servers failed.
+		createConnector := func(ctx context.Context) (*client.VPNConnector, error) {
 			var links []string
 			var lastFetchErr error
 			
 			// Try each URL in order until one succeeds
 			for i, url := range rawURLs {
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				default:
+				}
+
 				slog.Info("Attempting to fetch server list", "url_index", i+1, "total_urls", len(rawURLs), "url", url)
 				
 				var fetchErr error
@@ -373,81 +459,119 @@ func main() {
 			
 			// All URLs failed
 			if len(links) == 0 {
-				return fmt.Errorf("failed to fetch from all %d URLs, last error: %w", len(rawURLs), lastFetchErr)
+				return nil, fmt.Errorf("failed to fetch from all %d URLs, last error: %w", len(rawURLs), lastFetchErr)
 			}
 
 			servers, selectErr := selector.SelectAllByScore(links)
 			if selectErr != nil {
-				return fmt.Errorf("select servers: %w", selectErr)
+				return nil, fmt.Errorf("select servers: %w", selectErr)
 			}
 
-			connector := client.NewVPNConnector(vpn, selector, logger)
-			defer connector.Stop()
+			connector := client.NewVPNConnectorWithReconnect(vpn, selector, logger, reconnCfg)
 
 			// Log server report in structured format (JSON-compatible)
 			connector.LogServerReport(servers)
 
 			slog.Info("Attempting VPN connection with fallback support", "servers_count", len(servers))
 			if connErr := connector.ConnectWithFallback(servers); connErr != nil {
-				return fmt.Errorf("connect: %w", connErr)
+				connector.Stop()
+				return nil, fmt.Errorf("connect: %w", connErr)
 			}
 
 			// Log initial connection status with IP information
 			slog.Info("VPN connected successfully, logging connection details")
 			vpn.LogConnectionStatus()
 
-			// Create a cancellable context for monitoring goroutines
-			monitorCtx, monitorCancel := context.WithCancel(context.Background())
-			
-			// Ensure cleanup happens on function exit
-			defer func() {
-				slog.Info("Stopping all monitoring goroutines")
-				monitorCancel()
-			}()
+			return connector, nil
+		}
 
-			// Start periodic server list refresh if enabled
-			// Use first successful URL for periodic refresh
-			successfulURL := rawURLs[0] // Default to first URL
-			if refreshInterval > 0 {
-				slog.Info("Periodic server list refresh enabled", "interval", refreshInterval, "url", successfulURL)
-				go startPeriodicRefresh(monitorCtx, connector, selector, successfulURL, refreshInterval, timeout, maxServers)
+		// Initial connection attempt
+		connector, err := createConnector(context.Background())
+		if err != nil {
+			slog.Warn("Initial connection failed, starting reconnection loop", "error", err)
+			
+			// Set up reconnection with the connector creation as the reconnect function
+			reconCtx, reconCancel := context.WithCancel(context.Background())
+			defer reconCancel()
+
+			reconnectFunc := func(ctx context.Context) error {
+				// Create a fresh connector
+				newConnector, connErr := createConnector(ctx)
+				if connErr != nil {
+					return connErr
+				}
+				// Store for use below
+				connector = newConnector
+				return nil
 			}
 
-			// Monitor health status and connection info periodically
-			go func() {
-				ticker := time.NewTicker(30 * time.Second)
-				defer ticker.Stop()
-				
-				// Log initial connection status immediately
-				vpn.LogConnectionStatus()
-				
-				for {
-					select {
-					case <-ticker.C:
-						// Log health status
-						status := connector.GetHealthStatus()
-						slog.Info("VPN Health Status", "status", status)
-						
-						// Log connection status with IP info
-						vpn.LogConnectionStatus()
-					case <-sigterm:
-						monitorCancel() // Signal other goroutines to stop
-						return
-					case <-monitorCtx.Done():
-						return // Context cancelled (e.g., during shutdown)
-					}
+			refreshFunc := func(ctx context.Context) error {
+				// Just a placeholder - createConnector already re-fetches the server list.
+				// This is here for future use, e.g., DNS refresh or different fetch strategy.
+				slog.Debug("Reconnection refresh: will re-fetch server list on next attempt")
+				return nil
+			}
+
+			reconnector := client.NewReconnector(logger, reconnCfg, reconnectFunc, refreshFunc)
+			
+			if err := reconnector.Start(reconCtx); err != nil {
+				if err == client.ErrReconnectionStopped {
+					slog.Info("Reconnection loop stopped")
+				} else {
+					log.Fatalf("Reconnection failed: %v", err)
 				}
-			}()
-
-			// Wait for termination signal
-			<-sigterm
-			slog.Info("Termination signal received, shutting down...")
-			return nil
+				return
+			}
 		}
 
-		if err := connectToServers(); err != nil {
-			log.Fatalf("Failed to connect: %v", err)
+		defer connector.Stop()
+
+		// Create a cancellable context for monitoring goroutines
+		monitorCtx, monitorCancel := context.WithCancel(context.Background())
+		
+		// Ensure cleanup happens on function exit
+		defer func() {
+			slog.Info("Stopping all monitoring goroutines")
+			monitorCancel()
+		}()
+
+		// Start periodic server list refresh if enabled
+		if refreshInterval > 0 {
+			// Use first URL for periodic refresh
+			successfulURL := rawURLs[0]
+			slog.Info("Periodic server list refresh enabled", "interval", refreshInterval, "url", successfulURL)
+			go startPeriodicRefresh(monitorCtx, connector, selector, successfulURL, refreshInterval, timeout, maxServers)
 		}
+
+		// Monitor health status and connection info periodically
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			
+			// Log initial connection status immediately
+			vpn.LogConnectionStatus()
+			
+			for {
+				select {
+				case <-ticker.C:
+					// Log health status
+					status := connector.GetHealthStatus()
+					slog.Info("VPN Health Status", "status", status)
+					
+					// Log connection status with IP info
+					vpn.LogConnectionStatus()
+				case <-sigterm:
+					monitorCancel() // Signal other goroutines to stop
+					return
+				case <-monitorCtx.Done():
+					return // Context cancelled (e.g., during shutdown)
+				}
+			}
+		}()
+
+		// Wait for termination signal
+		<-sigterm
+		slog.Info("Termination signal received, shutting down...")
 	} else {
 		// Direct connection mode (no health monitoring)
 		slog.Info("Connecting to VPN server")

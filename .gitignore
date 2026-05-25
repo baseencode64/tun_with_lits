@@ -44,4 +44,4 @@ goxray_*
 *.7z
 dist/
 bin/
-build/
+build/tun

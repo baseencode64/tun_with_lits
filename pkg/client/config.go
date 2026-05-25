@@ -16,6 +16,9 @@ type AppConfig struct {
 	// Server selection settings
 	ServerSelection ServerSelectionConfig `yaml:"server_selection"`
 	
+	// Reconnection settings (persistence & auto-reconnect)
+	Reconnection ReconnectionConfig `yaml:"reconnection"`
+	
 	// Logging settings
 	Logging LoggingConfig `yaml:"logging"`
 	
@@ -126,6 +129,9 @@ func (c *AppConfig) setDefaults() {
 		c.ServerSelection.Timeout = "5s"
 	}
 
+	// Reconnection defaults
+	c.Reconnection.SetDefaults()
+
 	// Logging defaults
 	if c.Logging.Format == "" {
 		c.Logging.Format = "text"
@@ -224,6 +230,24 @@ func (c *AppConfig) Validate() error {
 	}
 	if c.HealthMonitoring.MaxRetries <= 0 {
 		return fmt.Errorf("health_monitoring.max_retries must be positive")
+	}
+
+	// Validate reconnection settings
+	if c.Reconnection.MaxRetries < 0 {
+		return fmt.Errorf("reconnection.max_retries cannot be negative")
+	}
+	if c.Reconnection.MinBackoff <= 0 && c.Reconnection.MinBackoffStr != "" {
+		if _, err := time.ParseDuration(c.Reconnection.MinBackoffStr); err != nil {
+			return fmt.Errorf("invalid reconnection.min_backoff: %w", err)
+		}
+	}
+	if c.Reconnection.MaxBackoff <= 0 && c.Reconnection.MaxBackoffStr != "" {
+		if _, err := time.ParseDuration(c.Reconnection.MaxBackoffStr); err != nil {
+			return fmt.Errorf("invalid reconnection.max_backoff: %w", err)
+		}
+	}
+	if c.Reconnection.BackoffFactor <= 1.0 && c.Reconnection.BackoffFactor != 0 {
+		return fmt.Errorf("reconnection.backoff_factor must be > 1.0, got %.1f", c.Reconnection.BackoffFactor)
 	}
 
 	return nil

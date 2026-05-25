@@ -2,12 +2,17 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
 	"sync"
 	"time"
 )
+
+// ErrAllServersExhausted is returned when all servers in the list have been tried
+// and none succeeded. The caller should start a reconnection loop.
+var ErrAllServersExhausted = errors.New("all servers exhausted")
 
 // VPNConnector manages VPN connection with fallback support and health monitoring
 type VPNConnector struct {
@@ -17,11 +22,15 @@ type VPNConnector struct {
 	healthChecker *HealthChecker
 	ctx           context.Context
 	cancelFunc    context.CancelFunc
-	
-	mu               sync.Mutex  // Protects concurrent access during failover
+
+	mu               sync.Mutex // Protects concurrent access during failover
 	currentServerIndex int
 	servers            []*ServerInfo
-	isFailingOver      bool  // Prevents concurrent failover attempts
+	isFailingOver      bool // Prevents concurrent failover attempts
+
+	// Reconnection support
+	reconnCfg    ReconnectionConfig
+	reconnector  *Reconnector
 }
 
 // NewVPNConnector creates a new VPN connector with fallback support
@@ -34,7 +43,26 @@ func NewVPNConnector(client *Client, selector *ServerSelector, logger *slog.Logg
 		ctx:                ctx,
 		cancelFunc:         cancel,
 		currentServerIndex: -1,
+		reconnCfg: ReconnectionConfig{
+			MinBackoff:    DefaultMinBackoff,
+			MaxBackoff:    DefaultMaxBackoff,
+			BackoffFactor: DefaultBackoffFactor,
+			MaxRetries:    DefaultMaxRetries,
+		},
 	}
+}
+
+// NewVPNConnectorWithReconnect creates a new VPN connector with custom reconnection settings.
+func NewVPNConnectorWithReconnect(
+	client *Client,
+	selector *ServerSelector,
+	logger *slog.Logger,
+	reconnCfg ReconnectionConfig,
+) *VPNConnector {
+	conn := NewVPNConnector(client, selector, logger)
+	conn.reconnCfg = reconnCfg
+	conn.reconnCfg.SetDefaults()
+	return conn
 }
 
 // ConnectWithFallback connects to the best available server, trying next ones if connection fails
@@ -261,8 +289,14 @@ func (c *VPNConnector) performFailover() {
 	}
 }
 
-// Stop stops health monitoring and cancels all operations
+// Stop stops health monitoring, reconnector, and cancels all operations
 func (c *VPNConnector) Stop() {
+	// Stop reconnector first (if running)
+	if c.reconnector != nil && c.reconnector.IsRunning() {
+		c.logger.Info("Stopping reconnection loop")
+		c.reconnector.Stop()
+	}
+
 	if c.healthChecker != nil {
 		c.healthChecker.Stop()
 	}
