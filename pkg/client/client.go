@@ -831,9 +831,6 @@ func (c *Client) setupTunnel() (*tun.Interface, error) {
 		return nil, fmt.Errorf("add IPv4 routes: %w", err)
 	}
 
-	// Note: DNS routes are added via setupDNSProtection() if enable_dns_protection is true
-	// Adding them here would cause "file exists" errors when both are enabled
-
 	// Add IPv6 routes if enabled
 	if c.cfg.EnableIPv6 {
 		c.cfg.Logger.Debug("Adding IPv6 routes for TUN interface", "routes_count", len(DefaultRoutesToTUNIPv6))
@@ -847,14 +844,6 @@ func (c *Client) setupTunnel() (*tun.Interface, error) {
 				c.cfg.Logger.Error("Failed to add IPv6 routes via system commands", "error", sysErr)
 				return nil, fmt.Errorf("add IPv6 routes: %w (library: %v, system: %v)", err, err, sysErr)
 			}
-		}
-		
-		// Note: IPv6 DNS routes are added via setupDNSProtection() if enable_dns_protection is true
-		// Adding them here would cause "file exists" errors when both are enabled
-		
-		// Also remove IPv6 address from interface
-		if addrErr := c.removeIPv6AddressSystem(c.tunName); addrErr != nil {
-			c.cfg.Logger.Warn("Failed to remove IPv6 address from interface", "error", addrErr)
 		}
 	}
 

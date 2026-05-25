@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.14] - 2026-05-25
+
+### Fixed
+
+- **Eliminated duplicate DNS route additions causing 'file exists' warnings**
+  - Removed DNS route additions from `setupTunnel()` to prevent conflicts with `setupDNSProtection()`
+  - DNS routes now added only once via `setupDNSProtection()` when `enable_dns_protection` is true
+  - Fixed duplicate IPv6 DNS route additions in `setupTunnel()`
+  - Clean log output with no 'file exists' errors during connection establishment
+
+### Changed
+
+- Simplified DNS routing logic - routes added only when explicitly requested
+- Improved code maintainability by removing redundant route management
+
+---
+
 ## [1.5.13] - 2026-05-25
 
 ### Fixed
