@@ -58,3 +58,8 @@ health_monitoring:
   
   # Max retries before failover (default: 3)
   max_retries: 3
+
+# Connection settings
+connection:
+  # Prometheus metrics endpoint port (0 = disabled)
+  metrics_port: 9090

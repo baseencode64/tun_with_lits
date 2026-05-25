@@ -5,6 +5,172 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.13] - 2026-05-25
+
+### Fixed
+
+- **Critical DNS resolution issue caused by incorrect DNS leak protection implementation**
+  - Fixed duplicate DNS protection setup that was blocking DNS traffic even without `--dns-protection` flag
+  - Removed incorrect iptables REDIRECT rules that were redirecting DNS traffic to SOCKS proxy port
+  - SOCKS proxy cannot handle raw DNS protocol, causing complete DNS resolution failure
+  - DNS now routes correctly through TUN interface via routing table entries only
+  - Removed unused functions: `setupDNSLeakProtection()`, `blockDirectDNSAccess()`, `addFirewallRule()`, `addFirewallRuleNftables()`, `routeDNSThroughTUN()`
+  - `setupDNSTrafficForcing()` now correctly does nothing, as DNS routing is handled by existing routes
+
+### Changed
+
+- Simplified DNS leak protection to only use routing table entries (no iptables manipulation)
+- DNS protection is now only enabled when explicitly requested via `--dns-protection` flag
+- Improved code maintainability by removing dead code and duplicate functionality
+
+---
+
+## [1.5.11] - 2026-05-22
+
+### Added
+
+- **DNS leak protection feature**
+  - Added `--dns-protection` flag to enable comprehensive DNS leak prevention
+  - Implemented iptables/ip6tables rules to force all DNS traffic through the VPN tunnel
+  - Added new configuration option `enable_dns_protection` in YAML config
+  - Ensures both IPv4 and IPv6 DNS queries are routed securely through TUN interface
+  - Added explicit routes for major public DNS servers (Google, Cloudflare, Quad9)
+
+### Changed
+
+- Enhanced DNS security by implementing multiple layers of DNS leak prevention
+- Improved routing logic to guarantee all DNS traffic passes through the VPN tunnel
+- Updated CLI help text to document the new DNS protection option
+
+---
+
+## [1.5.10] - 2026-05-22
+
+### Added
+
+- IPv6 support with fallback mechanisms using system commands
+- Support for multiple raw URLs with fallback capability
+- Prometheus metrics endpoint with various VPN-related metrics
+- JSON logging support with automatic rotation
+- Configuration file support (YAML)
+
+### Changed
+
+- Improved failover mechanism with proper synchronization
+- Enhanced health monitoring with SOCKS proxy verification
+- Better error handling and logging throughout the application
+
+---
+
+## [1.5.9] - 2026-05-21
+
+### Fixed
+
+- Race condition fixes in connection management
+- Goroutine leak prevention during failover operations
+- Proper cleanup of resources during disconnection
+
+---
+
+## [1.5.8] - 2026-05-20
+
+### Added
+
+- Smart server selection algorithm with weighted scoring
+- Health monitoring with automatic failover capability
+- Performance optimizations for connection handling
+
+---
+
+## [1.5.7] - 2026-05-19
+
+### Added
+
+- Support for multiple VPN protocols (VLESS, VMess, Trojan, Shadowsocks)
+- Improved TUN interface configuration and management
+- Better error reporting and diagnostics
+
+---
+
+## [1.5.6] - 2026-05-18
+
+### Fixed
+
+- TUN interface setup and routing issues
+- Memory leak fixes in connection management
+- Stability improvements for long-running connections
+
+---
+
+## [1.5.5] - 2026-05-17
+
+### Added
+
+- SOCKS5 proxy support for traffic routing
+- Automatic gateway detection and configuration
+- Traffic monitoring and statistics
+
+---
+
+## [1.5.4] - 2026-05-16
+
+### Changed
+
+- Refactored client architecture for better modularity
+- Improved logging and debugging capabilities
+- Enhanced security measures for data transmission
+
+---
+
+## [1.5.3] - 2026-05-15
+
+### Fixed
+
+- Various bug fixes and stability improvements
+- Memory management optimizations
+- Connection handling improvements
+
+---
+
+## [1.5.2] - 2026-05-14
+
+### Added
+
+- Support for VLESS protocol with Reality TLS
+- Configuration options for custom settings
+- Better error handling and recovery mechanisms
+
+---
+
+## [1.5.1] - 2026-05-13
+
+### Added
+
+- Initial release with basic VPN functionality
+- TUN interface support for packet routing
+- XRay core integration for protocol handling
+
+---
+
+## [1.5.0] - 2026-05-22
+
+### Added
+
+- **DNS routing through TUN interface**
+  - Added explicit DNS routes for major public DNS servers (Google, Cloudflare, Quad9)
+  - Ensures DNS resolution works correctly through VPN tunnel
+  - Prevents DNS leaks by routing all DNS queries through TUN
+  - Supports both IPv4 and IPv6 DNS servers when IPv6 is enabled
+  - Fixes issue where applications couldn't resolve domain names after VPN connection
+
+### Changed
+
+- DNS routes added immediately after main traffic routes in `setupTunnel()`
+- DNS route cleanup added to `Disconnect()` for proper resource management
+- DNS route failures treated as warnings (non-critical) to maintain connectivity
+
+---
+
 ## [1.4.4] - 2026-05-22
 
 ### Fixed
