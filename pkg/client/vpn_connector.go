@@ -31,6 +31,7 @@ type VPNConnector struct {
 	// Reconnection support
 	reconnCfg    ReconnectionConfig
 	reconnector  *Reconnector
+	fatalErrCh   chan error // Signals when all servers are exhausted
 }
 
 // NewVPNConnector creates a new VPN connector with fallback support
@@ -43,6 +44,7 @@ func NewVPNConnector(client *Client, selector *ServerSelector, logger *slog.Logg
 		ctx:                ctx,
 		cancelFunc:         cancel,
 		currentServerIndex: -1,
+		fatalErrCh:         make(chan error, 1),
 		reconnCfg: ReconnectionConfig{
 			MinBackoff:    DefaultMinBackoff,
 			MaxBackoff:    DefaultMaxBackoff,
@@ -50,6 +52,12 @@ func NewVPNConnector(client *Client, selector *ServerSelector, logger *slog.Logg
 			MaxRetries:    DefaultMaxRetries,
 		},
 	}
+}
+
+// FatalError returns a channel that receives an error if the connector encounters
+// an unrecoverable state (e.g., all servers exhausted during failover).
+func (c *VPNConnector) FatalError() <-chan error {
+	return c.fatalErrCh
 }
 
 // NewVPNConnectorWithReconnect creates a new VPN connector with custom reconnection settings.
@@ -302,6 +310,10 @@ func (c *VPNConnector) performFailover() {
 				continue
 			} else {
 				c.logger.Error("Exhausted all servers in failover")
+				select {
+				case c.fatalErrCh <- ErrAllServersExhausted:
+				default:
+				}
 				return
 			}
 		}

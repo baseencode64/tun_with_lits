@@ -591,9 +591,96 @@ func main() {
 			}
 		}()
 
-		// Wait for termination signal
-		<-sigterm
-		slog.Info("Termination signal received, shutting down...")
+		// Wait for termination signal or fatal error from connector in a loop
+		for {
+			select {
+			case <-sigterm:
+				slog.Info("Termination signal received, shutting down...")
+				return
+			case err := <-connector.FatalError():
+				slog.Error("Fatal connector error", "error", err)
+				
+				if err == client.ErrAllServersExhausted {
+					slog.Info("All servers exhausted. Initiating full reconnection loop.")
+					
+					// Stop the current connector and its monitoring
+					monitorCancel()
+					connector.Stop()
+
+					// Set up reconnection with the connector creation as the reconnect function
+					reconCtx, reconCancel := context.WithCancel(context.Background())
+
+					reconnectFunc := func(ctx context.Context) error {
+						// Create a fresh connector
+						newConnector, connErr := createConnector(ctx)
+						if connErr != nil {
+							return connErr
+						}
+						// Update references for next loop
+						connector = newConnector
+						
+						// Re-start monitoring
+						monitorCtx, monitorCancel = context.WithCancel(context.Background())
+						
+						if refreshInterval > 0 {
+							go startPeriodicRefresh(monitorCtx, connector, selector, rawURLs[0], refreshInterval, timeout, maxServers)
+						}
+						
+						// Re-start the ticker for health status logging
+						go func() {
+							ticker := time.NewTicker(30 * time.Second)
+							defer ticker.Stop()
+							vpn.LogConnectionStatus()
+							for {
+								select {
+								case <-ticker.C:
+									status := connector.GetHealthStatus()
+									slog.Info("VPN Health Status", "status", status)
+									vpn.LogConnectionStatus()
+								case <-sigterm:
+									monitorCancel()
+									return
+								case <-monitorCtx.Done():
+									return
+								}
+							}
+						}()
+						
+						return nil
+					}
+
+					refreshFunc := func(ctx context.Context) error {
+						slog.Debug("Reconnection refresh: will re-fetch server list on next attempt")
+						return nil
+					}
+
+					reconnector := client.NewReconnector(logger, reconnCfg, reconnectFunc, refreshFunc)
+					
+					// Handle signal while reconnecting
+					go func() {
+						<-sigterm
+						slog.Info("Termination signal received during reconnection")
+						reconCancel()
+					}()
+
+					if err := reconnector.Start(reconCtx); err != nil {
+						if err == client.ErrReconnectionStopped || err == context.Canceled {
+							slog.Info("Reconnection loop stopped")
+						} else {
+							log.Fatalf("Reconnection failed: %v", err)
+						}
+						reconCancel()
+						return
+					} else {
+						slog.Info("Successfully fully reconnected. Monitoring active.")
+						reconCancel()
+						// Continue the outer loop to wait on the new connector.FatalError() or sigterm
+					}
+				} else {
+					return
+				}
+			}
+		}
 	} else {
 		// Direct connection mode (no health monitoring)
 		slog.Info("Connecting to VPN server")
