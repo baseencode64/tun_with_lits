@@ -502,6 +502,12 @@ func (c *Client) Connect(link string) error {
 		"xray_server", c.xSrvIP.String(),
 		"socks_proxy", socksAddr)
 
+	// Restart metrics server on reconnection
+	// (it was stopped during Disconnect, so we need to start it again)
+	if c.cfg.MetricsPort > 0 {
+		c.startMetricsUpdate()
+	}
+
 	return nil
 }
 
@@ -985,6 +991,17 @@ func (c *Client) startMetricsUpdate() {
 		return
 	}
 	
+	// Ensure old server is closed before starting new one (for reconnection scenarios)
+	if c.metricsServer != nil {
+		c.cfg.Logger.Debug("Closing previous metrics server before restarting")
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		if err := c.metricsServer.Shutdown(ctx); err != nil {
+			c.cfg.Logger.Warn("Previous metrics server shutdown error", "error", err)
+		}
+		cancel()
+		c.metricsServer = nil
+	}
+	
 	// Start metrics HTTP server
 	addr := fmt.Sprintf("0.0.0.0:%d", c.cfg.MetricsPort)
 	mux := http.NewServeMux()
@@ -1040,17 +1057,22 @@ func (c *Client) startMetricsUpdate() {
 	}()
 }
 
-// stopMetricsUpdate stops the metrics server
+// stopMetricsUpdate stops the metrics server gracefully
 func (c *Client) stopMetricsUpdate() {
-	if c.metricsServer != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		
-		if err := c.metricsServer.Shutdown(ctx); err != nil {
-			c.cfg.Logger.Warn("Metrics server shutdown error", "error", err)
-		}
-		c.metricsServer = nil
+	if c.metricsServer == nil {
+		return
 	}
+	
+	c.cfg.Logger.Debug("Stopping metrics server")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
+	if err := c.metricsServer.Shutdown(ctx); err != nil {
+		c.cfg.Logger.Warn("Metrics server shutdown error", "error", err)
+	}
+	
+	c.metricsServer = nil
+	c.cfg.Logger.Info("Metrics server stopped")
 }
 
 // monitorTraffic periodically reads TUN interface statistics and updates atomic counters

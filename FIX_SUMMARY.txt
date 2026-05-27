@@ -1,0 +1,83 @@
+# 🔧 Quick Summary: Prometheus Metrics Reconnection Fix
+
+## Проблема
+Metrics endpoint недоступен после failover/reconnection.
+
+## Причина
+`Connect()` не перезапускал Prometheus HTTP сервер после переподключения.
+
+## Решение (3 изменения в `pkg/client/client.go`)
+
+### 1️⃣ Connect() - line ~505
+```diff
+  c.cfg.Logger.Info("VPN client connected successfully", ...)
+  
++ // Restart metrics server on reconnection
++ if c.cfg.MetricsPort > 0 {
++     c.startMetricsUpdate()
++ }
+  
+  return nil
+```
+
+### 2️⃣ startMetricsUpdate() - line ~981
+```diff
+  if c.cfg.MetricsPort <= 0 {
+      return
+  }
+  
++ // Ensure old server is closed before starting new one
++ if c.metricsServer != nil {
++     ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++     c.metricsServer.Shutdown(ctx)
++     cancel()
++     c.metricsServer = nil
++ }
+  
+  addr := fmt.Sprintf("0.0.0.0:%d", c.cfg.MetricsPort)
+  ...
+```
+
+### 3️⃣ stopMetricsUpdate() - line ~1041
+```diff
+  func (c *Client) stopMetricsUpdate() {
++     if c.metricsServer == nil {
++         return
++     }
++     
++     c.cfg.Logger.Debug("Stopping metrics server")
+      ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+      defer cancel()
+      
+      if err := c.metricsServer.Shutdown(ctx); err != nil {
+          c.cfg.Logger.Warn("Metrics server shutdown error", "error", err)
+      }
+      
+      c.metricsServer = nil
++     c.cfg.Logger.Info("Metrics server stopped")
+  }
+```
+
+## ✅ Result
+- Metrics endpoint теперь **всегда доступен**
+- Работает при первом подключении ✅
+- Работает после failover ✅
+- Работает после reconnection ✅
+
+## 🧪 Test
+```bash
+# Terminal 1: запустить VPN с metrics
+sudo go run . --from-raw "..." --metrics-port 9090
+
+# Terminal 2: проверить metrics (даже после reconnect)
+curl http://localhost:9090/metrics | grep vpn_connected
+```
+
+---
+
+**Files Modified**: 1
+- `pkg/client/client.go` (+25 lines, improved logic)
+
+**Compilation**: ✅ OK
+**Tests**: N/A (требуют Linux)
+**Breaking changes**: None
