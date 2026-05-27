@@ -124,7 +124,8 @@ func (c *VPNConnector) ConnectWithFallback(servers []*ServerInfo) error {
 	return fmt.Errorf("failed to connect to %d servers: %w", len(servers), lastErr)
 }
 
-// startHealthMonitoring begins health checking for current server
+// startHealthMonitoring begins health checking for current server.
+// Uses E2E traffic verification if an e2eCheckURL is configured.
 func (c *VPNConnector) startHealthMonitoring(server *ServerInfo) {
 	// Stop previous health checker if exists to prevent goroutine leaks
 	if c.healthChecker != nil {
@@ -138,13 +139,38 @@ func (c *VPNConnector) startHealthMonitoring(server *ServerInfo) {
 	// Get SOCKS proxy port from client config
 	socksPort := strconv.Itoa(c.client.cfg.InboundProxy.Port)
 	
-	// Create health checker with default settings
-	c.healthChecker = NewHealthChecker(
-		c.logger,
-		10*time.Second,  // check interval
-		5*time.Second,   // timeout
-		3,               // max retries before failover
-	)
+	// Get E2E check URL from configuration (default: empty = SOCKS-only check)
+	e2eCheckURL := c.client.cfg.E2ECheckURL
+	
+	// Create health checker with E2E traffic verification if URL is configured
+	if e2eCheckURL != "" {
+		c.logger.Info("Creating health checker with E2E traffic verification",
+			"check_url", e2eCheckURL,
+			"interval", "10s",
+			"timeout", "5s",
+			"max_retries", 3)
+		
+		c.healthChecker = NewHealthCheckerWithE2E(
+			c.logger,
+			10*time.Second,  // check interval
+			5*time.Second,   // timeout
+			3,               // max retries before failover
+			e2eCheckURL,     // E2E URL for real traffic verification
+		)
+	} else {
+		c.logger.Info("Creating health checker with SOCKS-only verification",
+			"interval", "10s",
+			"timeout", "5s",
+			"max_retries", 3)
+		
+		// Standard health check (SOCKS proxy only)
+		c.healthChecker = NewHealthChecker(
+			c.logger,
+			10*time.Second,  // check interval
+			5*time.Second,   // timeout
+			3,               // max retries before failover
+		)
+	}
 
 	// Start health checks with automatic failover
 	// Use sync.Once to prevent multiple concurrent failover triggers

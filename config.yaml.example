@@ -22,6 +22,14 @@ connection:
   
   # Allow insecure TLS certificates (default: false)
   tls_allow_insecure: false
+  
+  # E2E health check URL - real traffic verification through VPN tunnel
+  # Health checker will perform a real HTTP GET request through SOCKS5 to verify
+  # that data actually flows through the tunnel (not just SOCKS proxy being alive).
+  # Use an HTTP URL (not HTTPS) to avoid TLS overhead during health checks.
+  # Examples: "http://ipinfo.io/ip", "http://connectivitycheck.gstatic.com/generate_204"
+  # Leave empty to use SOCKS-only health check (default).
+  e2e_check_url: "http://ipinfo.io/ip"
 
 # Server selection and refresh settings
 server_selection:

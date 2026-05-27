@@ -196,6 +196,39 @@ _Actual time may vary by ±25% due to jitter for load distribution._
 
 ---
 
+### 🏥 E2E Health Check (Real Traffic Verification)
+
+Performs a real HTTP request through the VPN tunnel to detect silent connection drops (TLS EOF errors).
+
+```bash
+--e2e-check-url <url>  # HTTP URL for end-to-end traffic verification
+```
+
+**How it works:**
+
+1. Opens SOCKS5 connection
+2. Sends SOCKS5 CONNECT to target host (through tunnel)
+3. Performs HTTP GET request (through tunnel)
+4. Verifies valid HTTP response received
+5. 3 consecutive failures → automatic failover
+
+**Example:**
+
+```bash
+sudo goxray --from-raw https://example.com/links.txt \
+  --e2e-check-url "http://ipinfo.io/ip"
+```
+
+**Use HTTP URLs** (not HTTPS) to avoid TLS overhead:
+
+- `http://ipinfo.io/ip`
+- `http://connectivitycheck.gstatic.com/generate_204`
+- `http://httpbin.org/get`
+
+**Default:** empty (SOCKS-only check, backward compatible)
+
+---
+
 ### ⏱️ Timeouts
 
 #### Server Check Timeout
