@@ -1014,31 +1014,28 @@ func (c *Client) startMetricsUpdate() {
 		var connectTime time.Time
 		connectedLogged := false
 		
-		for {
-			select {
-			case <-ticker.C:
-				if !c.isConnected {
-					// Wait for connection - don't terminate the goroutine
-					if !connectedLogged {
-						c.cfg.Logger.Debug("Metrics: waiting for VPN connection")
-						connectedLogged = true
-					}
-					continue // Skip this iteration, wait for connection
+		for range ticker.C {
+			if !c.isConnected {
+				// Wait for connection - don't terminate the goroutine
+				if !connectedLogged {
+					c.cfg.Logger.Debug("Metrics: waiting for VPN connection")
+					connectedLogged = true
 				}
-				
-				// Record connection start time on first connected tick
-				if connectTime.IsZero() {
-					connectTime = time.Now()
-				}
-				
-				// Update traffic metrics from atomic counters
-				vpnBytesRead.Set(float64(c.BytesRead()))
-				vpnBytesWritten.Set(float64(c.BytesWritten()))
-				
-				// Update connection duration
-				duration := time.Since(connectTime).Seconds()
-				vpnConnectionDuration.Set(duration)
+				continue // Skip this iteration, wait for connection
 			}
+			
+			// Record connection start time on first connected tick
+			if connectTime.IsZero() {
+				connectTime = time.Now()
+			}
+			
+			// Update traffic metrics from atomic counters
+			vpnBytesRead.Set(float64(c.BytesRead()))
+			vpnBytesWritten.Set(float64(c.BytesWritten()))
+			
+			// Update connection duration
+			duration := time.Since(connectTime).Seconds()
+			vpnConnectionDuration.Set(duration)
 		}
 	}()
 }
