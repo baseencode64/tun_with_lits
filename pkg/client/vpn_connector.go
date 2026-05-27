@@ -389,7 +389,7 @@ func (c *VPNConnector) GetConnectionReport(servers []*ServerInfo) string {
 		return "No servers available"
 	}
 
-	report := fmt.Sprintf("=== VPN Server Selection Report ===\n")
+	report := "=== VPN Server Selection Report ===\n"
 	report += fmt.Sprintf("Total servers scanned: %d\n", len(servers))
 	report += fmt.Sprintf("Available servers: %d\n\n", len(servers))
 
