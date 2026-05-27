@@ -446,6 +446,9 @@ func (c *Client) Connect(link string) error {
 		return fmt.Errorf("SOCKS proxy at %s did not become ready within 2 seconds", socksAddr)
 	}
 
+	// Initialize/reset the channel for this connection
+	c.tunnelStopped = make(chan error, 1)
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	var ctx context.Context
@@ -453,13 +456,8 @@ func (c *Client) Connect(link string) error {
 	go func() {
 		wg.Done()
 		err := c.pipe.Copy(ctx, c.tunnel, c.cfg.InboundProxy.String())
-		select {
-		case c.tunnelStopped <- err:
-			c.cfg.Logger.Debug("tunnel pipe closed", "err", err)
-		default:
-			// Channel might be full or closed, log warning
-			c.cfg.Logger.Warn("Could not send tunnel stop signal, channel issue")
-		}
+		c.tunnelStopped <- err
+		c.cfg.Logger.Debug("tunnel pipe closed", "err", err)
 	}()
 	wg.Wait()
 	

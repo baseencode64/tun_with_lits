@@ -9,10 +9,13 @@
 ## 🎯 Проблема и Решение
 
 ### Проблема
+
 Ранее клиент проверял доступность сервера только **один раз** при подключении. Если после подключения сервер становился недоступным (трафик перестал проходить), пользователь оставался без VPN до момента ручного вмешательства.
 
 ### Решение
+
 Добавлена система **Health Check**, которая:
+
 - ✅ **Непрерывно мониторит** подключение к VPN серверу
 - ✅ **Автоматически переключает** на следующий лучший сервер при проблемах
 - ✅ **Периодически проверяет** доступность через TCP connection check
@@ -33,7 +36,7 @@ type HealthChecker struct {
     checkInterval time.Duration  // Интервал проверок (по умолчанию 10s)
     timeout       time.Duration  // Таймаут каждой проверки (по умолчанию 5s)
     maxRetries    int            // Макс. попыток перед failover (по умолчанию 3)
-    
+
     mu          sync.RWMutex
     isHealthy   bool
     consecutiveFailures int
@@ -60,7 +63,7 @@ type VPNConnector struct {
     healthChecker *HealthChecker  // NEW
     ctx           context.Context
     cancelFunc    context.CancelFunc
-    
+
     currentServerIndex int
     servers            []*ServerInfo
 }
@@ -133,11 +136,11 @@ healthChecker := NewHealthChecker(
 
 ### Параметры
 
-| Параметр | По умолчанию | Описание |
-|----------|--------------|----------|
-| `checkInterval` | 10s | Как часто проверять сервер |
-| `timeout` | 5s | Максимальное время ожидания ответа |
-| `maxRetries` | 3 | Сколько ошибок перед failover |
+| Параметр        | По умолчанию | Описание                           |
+| --------------- | ------------ | ---------------------------------- |
+| `checkInterval` | 10s          | Как часто проверять сервер         |
+| `timeout`       | 5s           | Максимальное время ожидания ответа |
+| `maxRetries`    | 3            | Сколько ошибок перед failover      |
 
 **Время до failover**: `checkInterval × maxRetries = 10s × 3 = 30s`
 
@@ -167,23 +170,23 @@ import (
 func main() {
     logger := slog.New(slog.NewTextHandler(nil, nil))
     vpn, _ := client.NewClientWithOpts(client.Config{Logger: logger})
-    
+
     // Создание селектора
     selector := client.NewServerSelector(loggerAdapter, 5*time.Second, 10)
     links, _ := selector.FetchRawLinks("https://example.com/links.txt")
     servers, _ := selector.SelectAllByLatency(links)
-    
+
     // Создание коннектора с health monitoring
     connector := client.NewVPNConnector(vpn, selector, logger)
     defer connector.Stop()
-    
+
     // Подключение с автоматическим health check
     connector.ConnectWithFallback(servers)
-    
+
     // Health checker запущен автоматически!
     // Каждые 10 секунд проверяет сервер
     // При 3 неудачных попытках - автоматический failover
-    
+
     // Мониторинг статуса
     for {
         status := connector.GetHealthStatus()
@@ -303,18 +306,49 @@ sudo goxray --from-raw https://example.com/links.txt
 Для разных сценариев:
 
 **Быстрое обнаружение** (критичные сервисы):
+
 ```go
 NewHealthChecker(logger, 5*time.Second, 3*time.Second, 2)
 // Failover через: 5s × 2 = 10s
 ```
 
 **Стандартный режим**:
+
 ```go
 NewHealthChecker(logger, 10*time.Second, 5*time.Second, 3)
 // Failover через: 10s × 3 = 30s
 ```
 
+### E2E Проверка трафика (End-to-End)
+
+По умолчанию Health Checker проверяет только доступность локального SOCKS прокси. Чтобы обнаруживать ситуации, когда SOCKS прокси работает, но VPN туннель разорван (например, TLS EOF ошибки или тихие обрывы сервером), включите сквозную (E2E) проверку:
+
+**Через CLI:**
+
+```bash
+sudo goxray --from-raw https://example.com/links.txt \
+  --e2e-check-url "http://ipinfo.io/ip"
+```
+
+**Через конфигурационный файл:**
+
+```yaml
+connection:
+  e2e_check_url: "http://ipinfo.io/ip"
+```
+
+Как работает E2E проверка:
+
+1. Открывает SOCKS5 соединение с `127.0.0.1:{socks_port}`
+2. Отправляет SOCKS5 CONNECT запрос к целевому хосту (через туннель)
+3. Выполняет HTTP GET запрос через установленный туннель
+4. Проверяет корректность HTTP ответа (например, `HTTP/1.1 200 OK`)
+5. При любой ошибке (включая EOF) → считает сервер нездоровым → после `max_retries` вызывает failover
+
+> **Важно:** Используйте HTTP URL (не HTTPS) для E2E проверок, чтобы избежать лишней вычислительной нагрузки от установки TLS соединения при каждой проверке. Цель — проверить маршрутизацию данных через туннель. Рекомендуемые URL: `http://ipinfo.io/ip`, `http://connectivitycheck.gstatic.com/generate_204`.
+
 **Экономия трафика** (медленные сети):
+
 ```go
 NewHealthChecker(logger, 30*time.Second, 10*time.Second, 5)
 // Failover через: 30s × 5 = 150s (2.5 мин)
@@ -346,6 +380,7 @@ defer connector.Stop() // Важно для остановки health checker!
 ## 🔐 Безопасность
 
 Health checker использует **TCP подключение** без отправки данных:
+
 - ✅ Не передает sensitive information
 - ✅ Не выполняет handshake с VPN
 - ✅ Только проверяет доступность порта
@@ -357,12 +392,12 @@ Health checker использует **TCP подключение** без отп
 
 ### Resource Usage
 
-| Метрика | Значение |
-|---------|----------|
-| **CPU** | < 0.1% (проверка раз в 10s) |
-| **RAM** | ~50 KB per HealthChecker |
-| **Network** | ~1 TCP packet / 10s |
-| **Goroutines** | +1 per connector |
+| Метрика        | Значение                    |
+| -------------- | --------------------------- |
+| **CPU**        | < 0.1% (проверка раз в 10s) |
+| **RAM**        | ~50 KB per HealthChecker    |
+| **Network**    | ~1 TCP packet / 10s         |
+| **Goroutines** | +1 per connector            |
 
 ### Overhead
 
@@ -379,6 +414,6 @@ Health checker использует **TCP подключение** без отп
 ✅ **Настраиваемость** - гибкая конфигурация интервалов  
 ✅ **Надежность** - защита от временных сбоев (consecutive failures)  
 ✅ **Наблюдаемость** - подробные логи и статус  
-✅ **Graceful degradation** - корректная обработка всех ошибок  
+✅ **Graceful degradation** - корректная обработка всех ошибок
 
 **Ваш VPN теперь сам восстанавливается при проблемах!** 🚀
