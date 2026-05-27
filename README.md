@@ -1,10 +1,10 @@
 # Go VPN client for XRay
+
 ![Static Badge](https://img.shields.io/badge/OS-macOS%20%7C%20Linux-blue?style=flat&logo=linux&logoColor=white&logoSize=auto&color=blue)
 ![Static Badge](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go&logoColor=white)
 [![Go Report Card](https://goreportcard.com/badge/github.com/goxray/tun)](https://goreportcard.com/report/github.com/goxray/tun)
 [![Go Reference](https://pkg.go.dev/badge/github.com/goxray/tun.svg)](https://pkg.go.dev/github.com/goxray/tun)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/goxray/tun/total?color=blue)
-
 
 This project brings fully functioning [XRay](https://github.com/XTLS/Xray-core) VPN client implementation in Go.
 
@@ -16,20 +16,28 @@ This project brings fully functioning [XRay](https://github.com/XTLS/Xray-core) 
 > The program will not damage your routing rules, default route is intact and only additional rules are added for the lifetime of application's TUN device. There are also additional complementary clean up procedures in place.
 
 #### What is XRay?
+
 Please visit https://xtls.github.io/en for more info.
 
+#### System Requirements
+
+See [SYSTEM_REQUIREMENTS.md](SYSTEM_REQUIREMENTS.md) for detailed hardware, network interface, and OS requirements.
+
 #### Tested and supported on:
+
 - macOS (tested on Sequoia 15.1.1)
-- Linux (tested on Ubuntu 24.10)
+- Linux (tested on Ubuntu 24.10, Debian 13)
 
 > Feel free to test this on your system and let me know in the issues :)
 
 ## ✨ Features
+
 - Stupidly easy to use
 - Supports all [Xray-core](https://github.com/XTLS/Xray-core) protocols (vless, vmess e.t.c.) using link notation (`vless://` e.t.c.)
 - Only soft routing rules are applied, no changes made to default routes
 - **IPv6 support** - Full dual-stack IPv4/IPv6 tunneling (enable with `--ipv6` flag)
 - **JSON logging** - Structured logging with automatic rotation (see [JSON Logging Guide](JSON_LOGGING_GUIDE.md))
+- **E2E health check** - Real traffic verification through SOCKS5 tunnel to detect silent connection drops (enable with `--e2e-check-url "http://ipinfo.io/ip"`)
 
 ## ⚡️ Installation
 
@@ -48,13 +56,16 @@ sudo apt install goxray-cli
 After the installation, the package might be updated automatically, as is done in Ubuntu. Packages are signed by [twdragon](https://github.com/twdragon) and published on [Launchpad](https://launchpad.net/~twdragon/+archive/ubuntu/xray). Experimental builds are also available in [pipeline repository](https://github.com/twdragon/xray-debian-pkg/actions).
 
 ## ⚡️ Usage
+
 > [!IMPORTANT]
+>
 > - `sudo` is required
 > - On linux set `sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip goxray_binary_path`
 
 ### Standalone application:
 
 Running the VPN on your machine is as simple as running this little command:
+
 ```bash
 sudo go run . <proto_link>
 ```
@@ -92,9 +103,45 @@ The client will try each URL in order. If the first fails, it automatically fall
 
 For detailed documentation, see [Configuration File Support](#configuration-file-support).
 
+#### E2E Health Check (Real Traffic Verification)
+
+By default, health monitoring checks only the local SOCKS5 proxy (`127.0.0.1:port`). This can miss cases where the SOCKS proxy is alive but the VPN tunnel is broken (traffic stops passing through, causing TLS EOF errors).
+
+Enable **E2E (end-to-end) health check** to perform a real HTTP GET request through the VPN tunnel:
+
+```bash
+sudo go run . --from-raw https://example.com/links.txt \
+  --e2e-check-url "http://ipinfo.io/ip"
+```
+
+How it works:
+
+1. Health checker opens a SOCKS5 connection
+2. Sends SOCKS5 CONNECT to the target host (through the tunnel)
+3. Performs an HTTP GET request (through the tunnel)
+4. Verifies a valid HTTP response is received
+5. If 3 consecutive checks fail → automatic failover to next server
+
+> [!TIP]
+> Use HTTP URLs (not HTTPS) to avoid TLS overhead during health checks. Good options:
+>
+> - `http://ipinfo.io/ip`
+> - `http://connectivitycheck.gstatic.com/generate_204`
+> - `http://httpbin.org/get`
+
+Via YAML config:
+
+```yaml
+connection:
+  e2e_check_url: "http://ipinfo.io/ip"
+```
+
+**Default:** empty (SOCKS-only check, backward compatible)
+
 #### Logging Options
 
 Enable JSON logging with rotation:
+
 ```bash
 sudo go run . --from-raw https://example.com/links.txt \
   --log-file /var/log/goxray/goxray.log \
@@ -103,6 +150,7 @@ sudo go run . --from-raw https://example.com/links.txt \
 ```
 
 Or use a configuration file (recommended for complex setups):
+
 ```yaml
 # goxray.yaml
 connection:
@@ -117,15 +165,18 @@ logging:
 For more details, see [Configuration File Guide](CONFIG_FILE.md).
 
 ### As library in your own project:
+
 > [!NOTE]
 > This project is built upon the `core` package, see details and documentation at https://github.com/goxray/core
 
 Install:
+
 ```bash
 go get github.com/goxray/tun/pkg/client
 ```
 
 Example:
+
 ```go
 logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 vpn, _ := client.NewClientWithOpts(client.Config{
@@ -148,6 +199,7 @@ If you need to use it with Docker - you can look at [this proposed implementatio
 ## 🛠 Build
 
 The project compiles like a regular Go program:
+
 ```bash
 go build -o goxray_cli .
 ```
@@ -159,20 +211,24 @@ env GOOS=darwin GOARCH=amd64 go build -o goxray_cli_darwin_amd64 .
 ```
 
 To cross-compile from macOS to Linux arm/amd I use these commands:
+
 ```bash
 docker run --platform=linux/arm64 -v=${PWD}:/app --workdir=/app arm64v8/golang:1.24 env GOARCH=arm64 go build -o goxray_cli_linux_arm64 .
 ```
+
 ```bash
 docker run --platform=linux/amd64 -v=${PWD}:/app --workdir=/app amd64/golang:1.24 env GOARCH=amd64 go build -o goxray_cli_linux_amd64 .
 ```
 
 ## How it works
+
 - Application sets up new TUN device.
 - Adds additional routes to route all system traffic to this newly created TUN device.
 - Adds exception for XRay outbound address (basically your VPN server IP).
 - Tunnel is created to process all incoming IP packets via TCP/IP stack. All outbound traffic is routed through the XRay inbound proxy and all incoming packets are routed back via TUN device.
 
 ## 📝 TODO
+
 - [ ] Add DNS leak protection
 - [ ] Add Web Dashboard / TUI interface
 - [ ] Add Prometheus metrics endpoint

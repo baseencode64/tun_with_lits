@@ -82,6 +82,9 @@ func main() {
 	var reconnectMaxBackoff time.Duration = client.DefaultMaxBackoff   // 5m
 	var reconnectBackoffFactor float64 = client.DefaultBackoffFactor   // 2.0
 
+	// E2E health check configuration
+	var e2eCheckURL string = ""  // Default: SOCKS-only health check
+
 	// Config file path
 	var configFile string = ""
 
@@ -236,6 +239,12 @@ func main() {
 			if reconnectBackoffFactor <= 1.0 {
 				log.Fatal("--backoff-factor must be > 1.0")
 			}
+		case "--e2e-check-url":
+			if i+1 >= len(args) {
+				log.Fatal("--e2e-check-url requires a URL (e.g., http://ipinfo.io/ip)")
+			}
+			i++
+			e2eCheckURL = args[i]
 		default:
 			// Positional argument (direct link)
 			if clientLink == "" {
@@ -339,6 +348,11 @@ func main() {
 			logMaxAge = appConfig.Logging.MaxAge
 		}
 		
+		// E2E health check settings (CLI overrides config)
+		if e2eCheckURL == "" && appConfig.Connection.E2ECheckURL != "" {
+			e2eCheckURL = appConfig.Connection.E2ECheckURL
+		}
+
 		// Metrics settings (CLI overrides config)
 		if metricsPort == 0 && appConfig.Connection.MetricsPort > 0 {
 			metricsPort = appConfig.Connection.MetricsPort
@@ -367,6 +381,7 @@ func main() {
 		EnableIPv6:          enableIPv6,
 		MetricsPort:         metricsPort,
 		EnableDNSProtection: enableDNSProtection,
+		E2ECheckURL:         e2eCheckURL,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -401,6 +416,13 @@ func main() {
 		"min_backoff", reconnectMinBackoff,
 		"max_backoff", reconnectMaxBackoff,
 		"backoff_factor", reconnectBackoffFactor)
+
+	// Log E2E health check configuration
+	if e2eCheckURL != "" {
+		slog.Info("E2E health check enabled", "check_url", e2eCheckURL)
+	} else {
+		slog.Info("E2E health check disabled (using SOCKS-only check)")
+	}
 
 	// If using raw URL(s), fetch and select servers with fallback support
 	if fromRaw {

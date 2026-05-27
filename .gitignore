@@ -1,9 +1,20 @@
-.idea
-*.exe
-*.exe~
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go binaries
+*.exe*
 *.dll
 *.so
 *.dylib
+
+# Build artifacts
 goxray_*
 *.bin
 *.tar.gz
@@ -13,35 +24,9 @@ goxray_*
 dist/
 bin/
 build/
->>>>>>> 8374170 (feat: add automatic server selection from raw VLESS lists)
-.idea
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-goxray_*
-*.bin
-*.tar.gz
-*.zip
-*.tar
-*.7z
-dist/
-bin/
-build/
-=======
-.idea
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-goxray_*
-*.bin
-*.tar.gz
-*.zip
-*.tar
-*.7z
-dist/
-bin/
-build/tun
+
+# Local TUN artifact
+tun
+
+# Logs
+*.log

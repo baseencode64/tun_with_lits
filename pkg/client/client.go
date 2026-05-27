@@ -213,6 +213,13 @@ type Config struct {
 	MetricsPort int
 	// EnableDNSProtection enables DNS leak protection by routing all DNS traffic through the TUN interface (default: false).
 	EnableDNSProtection bool
+	
+	// E2ECheckURL is an HTTP URL used for end-to-end traffic verification through the VPN tunnel.
+	// If set, the health checker will perform a real HTTP request through SOCKS5 to verify
+	// that traffic is actually passing through the tunnel (not just the SOCKS proxy being alive).
+	// Example: "http://ipinfo.io/ip" or "http://connectivitycheck.gstatic.com/generate_204"
+	// Leave empty to use SOCKS-only health checking (default).
+	E2ECheckURL string
 }
 
 func (c *Config) apply(new *Config) {
@@ -242,6 +249,10 @@ func (c *Config) apply(new *Config) {
 	}
 	// EnableDNSProtection is a boolean flag, always apply if explicitly set
 	c.EnableDNSProtection = new.EnableDNSProtection
+	// E2ECheckURL is a string, apply if non-empty
+	if new.E2ECheckURL != "" {
+		c.E2ECheckURL = new.E2ECheckURL
+	}
 }
 
 // Client is the actual VPN cl. It manages connections, routing and tunneling of the requests.

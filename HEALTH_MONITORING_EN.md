@@ -318,6 +318,42 @@ NewHealthChecker(logger, 10*time.Second, 5*time.Second, 3)
 // Failover after: 10s × 3 = 30s
 ```
 
+### E2E Traffic Verification
+
+By default, health checker verifies only the local SOCKS proxy responsiveness. To detect cases where the SOCKS proxy is alive but the VPN tunnel is broken (e.g., TLS EOF errors, silent connection drops), enable E2E (end-to-end) traffic verification:
+
+**CLI:**
+
+```bash
+sudo goxray --from-raw https://example.com/links.txt \
+  --e2e-check-url "http://ipinfo.io/ip"
+```
+
+**Config file:**
+
+```yaml
+connection:
+  e2e_check_url: "http://ipinfo.io/ip"
+```
+
+**As a library:**
+
+```go
+vpn, _ := client.NewClientWithOpts(client.Config{
+    E2ECheckURL: "http://ipinfo.io/ip",
+})
+```
+
+How E2E check works:
+
+1. Opens SOCKS5 connection to `127.0.0.1:{socks_port}`
+2. Sends SOCKS5 CONNECT to the target host (through the tunnel)
+3. Performs raw HTTP GET request through the established tunnel
+4. Reads HTTP response status line (e.g., `HTTP/1.1 200 OK`)
+5. If any step fails → marks as unhealthy → triggers failover after max_retries
+
+> **Important:** Use HTTP URLs (not HTTPS) for E2E checks to avoid TLS overhead. The goal is to verify tunnel data flow, not to test TLS termination.
+
 **Traffic savings** (slow networks):
 
 ```go

@@ -49,6 +49,12 @@ type ConnectionConfig struct {
 	
 	// Prometheus metrics endpoint port (0 = disabled)
 	MetricsPort int `yaml:"metrics_port"`
+	
+	// E2E health check URL - HTTP URL for end-to-end traffic verification through SOCKS5.
+	// If set, health checker will perform a real HTTP request to verify data flow.
+	// Example: "http://ipinfo.io/ip"
+	// Empty = SOCKS-only health check (default).
+	E2ECheckURL string `yaml:"e2e_check_url,omitempty"`
 }
 
 // ServerSelectionConfig holds server selection and refresh settings
