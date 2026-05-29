@@ -281,6 +281,10 @@ type Client struct {
 	// Traffic counters (atomic)
 	bytesRead    int64
 	bytesWritten int64
+	
+	// Cumulative traffic counters (preserved across reconnections)
+	cumulativeBytesRead    int64
+	cumulativeBytesWritten int64
 }
 
 // Proxy will set up XRay inbound.
@@ -494,8 +498,16 @@ func (c *Client) Connect(link string) error {
 		serverIP := c.xSrvIP.String()
 		vpnServerIP.Reset()
 		vpnServerIP.WithLabelValues(serverIP).Set(1)
-		c.cfg.Logger.Debug("VPN server IP metric updated", "ip", serverIP)
+		c.cfg.Logger.Info("VPN server IP metric updated", "ip", serverIP)
 	}
+	
+	// Preserve cumulative traffic counters on reconnection
+	// (bytes are summed across all connections for this session)
+	c.cfg.Logger.Debug("Metrics state on reconnection",
+		"cumulative_bytes_read", atomic.LoadInt64(&c.cumulativeBytesRead),
+		"current_bytes_read", c.BytesRead(),
+		"cumulative_bytes_written", atomic.LoadInt64(&c.cumulativeBytesWritten),
+		"current_bytes_written", c.BytesWritten())
 	
 	c.cfg.Logger.Info("VPN client connected successfully", 
 		"tun_address", c.cfg.TUNAddress.String(),
@@ -624,6 +636,17 @@ func (c *Client) Disconnect(ctx context.Context) error {
 	vpnConnected.Set(0)
 	vpnDisconnectionsTotal.Inc()
 	vpnConnectionDuration.Set(0)
+	
+	// Preserve cumulative bytes: add current bytes to cumulative counters
+	// This ensures metrics show total traffic across all reconnections
+	currentRead := int64(c.BytesRead())
+	currentWritten := int64(c.BytesWritten())
+	atomic.AddInt64(&c.cumulativeBytesRead, currentRead)
+	atomic.AddInt64(&c.cumulativeBytesWritten, currentWritten)
+	c.cfg.Logger.Info("Bytes preserved on disconnect",
+		"current_read", currentRead, "current_written", currentWritten,
+		"new_cumulative_read", atomic.LoadInt64(&c.cumulativeBytesRead),
+		"new_cumulative_written", atomic.LoadInt64(&c.cumulativeBytesWritten))
 	
 	// Reset TUN IP address metrics
 	vpnTunIPv4.Reset()
@@ -1047,8 +1070,11 @@ func (c *Client) startMetricsUpdate() {
 			}
 			
 			// Update traffic metrics from atomic counters
-			vpnBytesRead.Set(float64(c.BytesRead()))
-			vpnBytesWritten.Set(float64(c.BytesWritten()))
+			// Include both cumulative bytes and current connection bytes
+			totalRead := atomic.LoadInt64(&c.cumulativeBytesRead) + int64(c.BytesRead())
+			totalWritten := atomic.LoadInt64(&c.cumulativeBytesWritten) + int64(c.BytesWritten())
+			vpnBytesRead.Set(float64(totalRead))
+			vpnBytesWritten.Set(float64(totalWritten))
 			
 			// Update connection duration
 			duration := time.Since(connectTime).Seconds()
