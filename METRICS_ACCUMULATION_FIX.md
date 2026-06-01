@@ -3,11 +3,13 @@
 ## 🔧 Проблемы (Исправлено)
 
 ### ❌ Проблема 1: vpn_bytes_read и vpn_bytes_written сбрасываются при reconnect
+
 **Было**: При переподключении значения bytes обнулялись, не учитывался весь трафик
 **Решение**: Добавлены глобальные накопительные счетчики
 **Результат**: ✅ Метрики теперь показывают СУММУ всего трафика с момента запуска клиента
 
-### ❌ Проблема 2: vpn_server_ip и xray_server не обновляются после reconnect  
+### ❌ Проблема 2: vpn_server_ip и xray_server не обновляются после reconnect
+
 **Было**: IP адреса сервера оставались старыми
 **Решение**: Добавлено явное обновление IP в Connect() + логирование
 **Результат**: ✅ Метрики обновляются с каждым новым подключением
@@ -17,14 +19,15 @@
 ## 💾 Структурные Изменения (pkg/client/client.go)
 
 ### 1. Добавлены новые поля в структуру Client
+
 ```go
 type Client struct {
     // ... existing fields ...
-    
+
     // Traffic counters (atomic)
     bytesRead    int64
     bytesWritten int64
-    
+
     // 🆕 Cumulative traffic counters (preserved across reconnections)
     cumulativeBytesRead    int64
     cumulativeBytesWritten int64
@@ -32,6 +35,7 @@ type Client struct {
 ```
 
 **Назначение**:
+
 - `bytesRead/bytesWritten` - текущий tunnel, обнуляются при reconnect
 - `cumulativeBytesRead/Written` - сумма всех bytes со всех tunnels, никогда не обнуляются
 
@@ -40,6 +44,7 @@ type Client struct {
 ## 🔄 Логика Потока Данных
 
 ### При Connect() - Обновление IP метрик
+
 ```go
 // Update VPN server external IP
 if c.xSrvIP != nil {
@@ -60,6 +65,7 @@ c.cfg.Logger.Debug("Metrics state on reconnection",
 ✅ IP метрики обновляются с новым сервером
 
 ### При Disconnect() - Сохранение Bytes
+
 ```go
 // Preserve cumulative bytes: add current bytes to cumulative counters
 // This ensures metrics show total traffic across all reconnections
@@ -76,6 +82,7 @@ c.cfg.Logger.Info("Bytes preserved on disconnect",
 ✅ Перед тем как TUN закроется, bytes сохраняются в cumulative счетчик
 
 ### При обновлении метрик (в startMetricsUpdate()) - Сумма
+
 ```go
 // Update traffic metrics from atomic counters
 // Include both cumulative bytes and current connection bytes
@@ -173,6 +180,7 @@ Metrics show:
 ## 🧪 Тестирование
 
 ### Test Case 1: Проверить что bytes накапливаются
+
 ```bash
 # Terminal 1: Start VPN with metrics
 sudo go run . --from-raw "..." --metrics-port 9090
@@ -191,6 +199,7 @@ watch -n 1 'curl -s http://localhost:9090/metrics | grep vpn_bytes'
 ```
 
 ### Test Case 2: Проверить что IP обновляется
+
 ```bash
 # Monitor server IP before failover
 curl -s http://localhost:9090/metrics | grep 'vpn_server_ip{ip'
@@ -204,6 +213,7 @@ curl -s http://localhost:9090/metrics | grep 'vpn_server_ip{ip'
 ```
 
 ### Test Case 3: Полный цикл
+
 ```bash
 # Start monitoring
 curl http://localhost:9090/metrics | grep -E 'vpn_(bytes|server_ip|connections_total)'
@@ -224,10 +234,10 @@ curl http://localhost:9090/metrics | grep -E 'vpn_(bytes|server_ip|connections_t
 
 ## 🔍 Изменённые Файлы
 
-| Файл | Строки | Изменения |
-|------|--------|-----------|
-| `pkg/client/client.go` | +30 | Добавлены накопительные счетчики и логика обновления |
-| **Всего** | **+30** | Минимальные, целевые изменения |
+| Файл                   | Строки  | Изменения                                            |
+| ---------------------- | ------- | ---------------------------------------------------- |
+| `pkg/client/client.go` | +30     | Добавлены накопительные счетчики и логика обновления |
+| **Всего**              | **+30** | Минимальные, целевые изменения                       |
 
 ---
 
@@ -245,12 +255,12 @@ curl http://localhost:9090/metrics | grep -E 'vpn_(bytes|server_ip|connections_t
 
 ## 🚀 Результат
 
-| Метрика | Поведение |
-|---------|-----------|
-| `vpn_bytes_read_total` | ✅ Сумма всего трафика (accumulates) |
-| `vpn_bytes_written_total` | ✅ Сумма всего трафика (accumulates) |
-| `vpn_server_ip` | ✅ Обновляется при каждом новом подключении |
-| `vpn_tun_ipv4` | ✅ Обновляется при каждом новом подключении |
-| `vpn_connections_total` | ✅ Увеличивается при каждом reconnect |
+| Метрика                   | Поведение                                   |
+| ------------------------- | ------------------------------------------- |
+| `vpn_bytes_read_total`    | ✅ Сумма всего трафика (accumulates)        |
+| `vpn_bytes_written_total` | ✅ Сумма всего трафика (accumulates)        |
+| `vpn_server_ip`           | ✅ Обновляется при каждом новом подключении |
+| `vpn_tun_ipv4`            | ✅ Обновляется при каждом новом подключении |
+| `vpn_connections_total`   | ✅ Увеличивается при каждом reconnect       |
 
 **Теперь метрики полностью корректны!** 🎉

@@ -214,6 +214,10 @@ type Config struct {
 	// EnableDNSProtection enables DNS leak protection by routing all DNS traffic through the TUN interface (default: false).
 	EnableDNSProtection bool
 	
+	// EnableKillSwitch blocks all outbound traffic if VPN disconnects unexpectedly (default: false).
+	// When enabled, iptables rules will prevent IP leaks during connection drops.
+	EnableKillSwitch bool
+	
 	// E2ECheckURL is an HTTP URL used for end-to-end traffic verification through the VPN tunnel.
 	// If set, the health checker will perform a real HTTP request through SOCKS5 to verify
 	// that traffic is actually passing through the tunnel (not just the SOCKS proxy being alive).
@@ -249,6 +253,8 @@ func (c *Config) apply(new *Config) {
 	}
 	// EnableDNSProtection is a boolean flag, always apply if explicitly set
 	c.EnableDNSProtection = new.EnableDNSProtection
+	// EnableKillSwitch is a boolean flag, always apply if explicitly set
+	c.EnableKillSwitch = new.EnableKillSwitch
 	// E2ECheckURL is a string, apply if non-empty
 	if new.E2ECheckURL != "" {
 		c.E2ECheckURL = new.E2ECheckURL
@@ -285,6 +291,10 @@ type Client struct {
 	// Cumulative traffic counters (preserved across reconnections)
 	cumulativeBytesRead    int64
 	cumulativeBytesWritten int64
+	
+	// Kill switch state (thread-safe)
+	killSwitchActive bool        // Tracks if kill switch is currently active
+	killSwitchMutex  sync.RWMutex // Protects killSwitchActive access
 }
 
 // Proxy will set up XRay inbound.
@@ -520,6 +530,13 @@ func (c *Client) Connect(link string) error {
 		c.startMetricsUpdate()
 	}
 
+	// Deactivate kill switch now that VPN is connected
+	// This allows normal traffic flow through the VPN tunnel
+	if err := c.deactivateKillSwitch(); err != nil {
+		c.cfg.Logger.Warn("Failed to deactivate kill switch", "error", err)
+		// Log but don't fail connection - traffic should work through VPN anyway
+	}
+
 	return nil
 }
 
@@ -528,6 +545,11 @@ func (c *Client) Connect(link string) error {
 // It will block till all resources are done processing or
 // context is cancelled (method also enforces timeout of disconnectTimeout)
 func (c *Client) Disconnect(ctx context.Context) error {
+	// Activate kill switch FIRST to prevent IP leaks during disconnection
+	if err := c.activateKillSwitch(); err != nil {
+		c.cfg.Logger.Warn("Failed to activate kill switch on disconnect", "error", err)
+	}
+	
 	c.mu.Lock()
 	
 	// Prevent double disconnect
@@ -1311,6 +1333,176 @@ func (c *Client) cleanupDNSTrafficForcing() error {
 	return nil
 }
 
+// activateKillSwitch blocks all outbound traffic except loopback using iptables
+// This prevents IP leaks if VPN connection is interrupted
+func (c *Client) activateKillSwitch() error {
+	if !c.cfg.EnableKillSwitch {
+		return nil // Kill switch disabled in config
+	}
+	
+	c.killSwitchMutex.Lock()
+	defer c.killSwitchMutex.Unlock()
+	
+	if c.killSwitchActive {
+		return nil // Already active, idempotent
+	}
+	
+	c.cfg.Logger.Info("Activating kill switch - blocking all traffic")
+	
+	// Setup IPv4 kill switch rules
+	if err := c.setupKillSwitchRules(false); err != nil {
+		c.cfg.Logger.Warn("Failed to setup IPv4 kill switch rules", "error", err)
+		// Don't return error - partial protection is better than nothing
+	}
+	
+	// Setup IPv6 kill switch rules if enabled
+	if c.cfg.EnableIPv6 {
+		if err := c.setupKillSwitchRules(true); err != nil {
+			c.cfg.Logger.Warn("Failed to setup IPv6 kill switch rules", "error", err)
+		}
+	}
+	
+	c.killSwitchActive = true
+	c.cfg.Logger.Info("Kill switch activated - output traffic blocked")
+	return nil
+}
+
+// deactivateKillSwitch removes iptables rules that block traffic
+// Called when VPN connection is successfully established
+func (c *Client) deactivateKillSwitch() error {
+	if !c.cfg.EnableKillSwitch {
+		return nil // Kill switch disabled in config
+	}
+	
+	c.killSwitchMutex.Lock()
+	defer c.killSwitchMutex.Unlock()
+	
+	if !c.killSwitchActive {
+		return nil // Not active, idempotent
+	}
+	
+	c.cfg.Logger.Info("Deactivating kill switch - restoring traffic")
+	
+	// Cleanup IPv4 kill switch rules
+	if err := c.cleanupKillSwitchRules(false); err != nil {
+		c.cfg.Logger.Warn("Failed to cleanup IPv4 kill switch rules", "error", err)
+	}
+	
+	// Cleanup IPv6 kill switch rules if enabled
+	if c.cfg.EnableIPv6 {
+		if err := c.cleanupKillSwitchRules(true); err != nil {
+			c.cfg.Logger.Warn("Failed to cleanup IPv6 kill switch rules", "error", err)
+		}
+	}
+	
+	c.killSwitchActive = false
+	c.cfg.Logger.Info("Kill switch deactivated - output traffic restored")
+	return nil
+}
+
+// setupKillSwitchRules creates iptables rules to block all outbound traffic except loopback and XRay server
+// This allows failover to work by permitting traffic to the XRay server
+func (c *Client) setupKillSwitchRules(useIPv6 bool) error {
+	cmdName := "iptables"
+	chainName := "goxray_killswitch"
+	
+	if useIPv6 {
+		cmdName = "ip6tables"
+	}
+	
+	// Create custom chain
+	createChainCmd := exec.Command(cmdName, "-N", chainName)
+	if err := createChainCmd.Run(); err != nil {
+		// Chain might already exist, that's OK - will fail but we'll add rules anyway
+		c.cfg.Logger.Debug("Kill switch chain creation (may already exist)", "cmd", cmdName, "error", err)
+	}
+	
+	// Flush chain to ensure clean state
+	flushCmd := exec.Command(cmdName, "-F", chainName)
+	if err := flushCmd.Run(); err != nil {
+		c.cfg.Logger.Debug("Failed to flush kill switch chain", "error", err)
+	}
+	
+	// Allow loopback traffic (local communication)
+	allowLoCmd := exec.Command(cmdName, "-A", chainName, "-o", "lo", "-j", "ACCEPT")
+	if err := allowLoCmd.Run(); err != nil {
+		return fmt.Errorf("failed to allow loopback in kill switch: %w", err)
+	}
+	c.cfg.Logger.Debug("Kill switch loopback rule added", "cmd", cmdName)
+	
+	// Allow established connections (for keepalive and already-active connections)
+	// This is important for reconnection to work
+	allowEstCmd := exec.Command(cmdName, "-A", chainName, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT")
+	if err := allowEstCmd.Run(); err != nil {
+		c.cfg.Logger.Debug("Failed to allow established connections in kill switch", "error", err)
+		// Not critical, continue anyway
+	} else {
+		c.cfg.Logger.Debug("Kill switch established connections rule added", "cmd", cmdName)
+	}
+	
+	// Allow traffic to XRay server (CRITICAL for failover)
+	// This permits the client to create new connections to XRay servers during failover
+	if c.xSrvIP != nil {
+		xrayIP := c.xSrvIP.String()
+		allowXrayCmd := exec.Command(cmdName, "-A", chainName, "-d", xrayIP, "-j", "ACCEPT")
+		if err := allowXrayCmd.Run(); err != nil {
+			c.cfg.Logger.Warn("Failed to allow XRay server in kill switch - failover may not work!", 
+				"xray_ip", xrayIP, "error", err)
+			// Log warning but continue - partial protection is better than nothing
+		} else {
+			c.cfg.Logger.Debug("Kill switch XRay server exception added", "xray_ip", xrayIP, "cmd", cmdName)
+		}
+	}
+	
+	// Block all other traffic (default DROP)
+	blockCmd := exec.Command(cmdName, "-A", chainName, "-j", "DROP")
+	if err := blockCmd.Run(); err != nil {
+		return fmt.Errorf("failed to add block rule to kill switch: %w", err)
+	}
+	c.cfg.Logger.Debug("Kill switch block rule added", "cmd", cmdName)
+	
+	// Jump from OUTPUT chain to kill switch chain
+	jumpCmd := exec.Command(cmdName, "-A", "OUTPUT", "-j", chainName)
+	if err := jumpCmd.Run(); err != nil {
+		return fmt.Errorf("failed to jump to kill switch chain: %w", err)
+	}
+	c.cfg.Logger.Debug("Kill switch rules applied successfully", "cmd", cmdName)
+	
+	return nil
+}
+
+// cleanupKillSwitchRules removes iptables rules that block traffic
+func (c *Client) cleanupKillSwitchRules(useIPv6 bool) error {
+	cmdName := "iptables"
+	chainName := "goxray_killswitch"
+	
+	if useIPv6 {
+		cmdName = "ip6tables"
+	}
+	
+	// Remove jump from OUTPUT to kill switch chain
+	deleteJumpCmd := exec.Command(cmdName, "-D", "OUTPUT", "-j", chainName)
+	if err := deleteJumpCmd.Run(); err != nil {
+		c.cfg.Logger.Debug("Failed to remove jump rule from OUTPUT", "cmd", cmdName, "error", err)
+		// Continue anyway - might not exist
+	}
+	
+	// Flush the chain
+	flushCmd := exec.Command(cmdName, "-F", chainName)
+	if err := flushCmd.Run(); err != nil {
+		c.cfg.Logger.Debug("Failed to flush kill switch chain", "cmd", cmdName, "error", err)
+	}
+	
+	// Delete the chain
+	deleteChainCmd := exec.Command(cmdName, "-X", chainName)
+	if err := deleteChainCmd.Run(); err != nil {
+		c.cfg.Logger.Debug("Failed to delete kill switch chain", "cmd", cmdName, "error", err)
+		// Not critical if chain doesn't exist
+	}
+	
+	c.cfg.Logger.Debug("Kill switch rules cleaned up", "cmd", cmdName)
+	return nil
+}
 
 // min returns the minimum of two integers
 func min(a, b int) int {

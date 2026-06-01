@@ -47,6 +47,11 @@ type ConnectionConfig struct {
 	// TLS allow insecure certificates
 	TLSAllowInsecure bool `yaml:"tls_allow_insecure"`
 	
+	// Kill switch: block all traffic if VPN disconnects unexpectedly
+	// When enabled, iptables rules will block all outbound traffic (except loopback)
+	// if the VPN connection drops, preventing IP leaks
+	EnableKillSwitch bool `yaml:"enable_kill_switch"`
+	
 	// Prometheus metrics endpoint port (0 = disabled)
 	MetricsPort int `yaml:"metrics_port"`
 	
