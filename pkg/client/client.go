@@ -163,6 +163,49 @@ var (
 		},
 		[]string{"ip_address"},
 	)
+
+	// Configuration metrics - show which features are enabled
+	goxrayConfigIPv6Enabled = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "goxray_config_ipv6_enabled",
+			Help: "IPv6 support enabled in configuration (1 = enabled, 0 = disabled)",
+		},
+	)
+
+	goxrayConfigDNSProtectionEnabled = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "goxray_config_dns_protection_enabled",
+			Help: "DNS protection enabled in configuration (1 = enabled, 0 = disabled)",
+		},
+	)
+
+	goxrayConfigKillSwitchEnabled = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "goxray_config_kill_switch_enabled",
+			Help: "Kill switch functionality enabled in configuration (1 = enabled, 0 = disabled)",
+		},
+	)
+
+	goxrayConfigMetricsEnabled = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "goxray_config_metrics_enabled",
+			Help: "Prometheus metrics enabled in configuration (1 = enabled, 0 = disabled)",
+		},
+	)
+
+	goxrayConfigTLSInsecureAllowed = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "goxray_config_tls_insecure_allowed",
+			Help: "TLS insecure certificates allowed (1 = allowed, 0 = not allowed)",
+		},
+	)
+
+	goxrayConfigE2ECheckEnabled = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "goxray_config_e2e_check_enabled",
+			Help: "End-to-end connectivity check enabled (1 = enabled, 0 = disabled)",
+		},
+	)
 )
 
 func init() {
@@ -176,6 +219,14 @@ func init() {
 	prometheus.MustRegister(vpnTunIPv4)
 	prometheus.MustRegister(vpnTunIPv6)
 	prometheus.MustRegister(vpnServerIP)
+	
+	// Register configuration metrics
+	prometheus.MustRegister(goxrayConfigIPv6Enabled)
+	prometheus.MustRegister(goxrayConfigDNSProtectionEnabled)
+	prometheus.MustRegister(goxrayConfigKillSwitchEnabled)
+	prometheus.MustRegister(goxrayConfigMetricsEnabled)
+	prometheus.MustRegister(goxrayConfigTLSInsecureAllowed)
+	prometheus.MustRegister(goxrayConfigE2ECheckEnabled)
 }
 
 var (
@@ -390,6 +441,9 @@ func (c *Client) Connect(link string) error {
 
 	var err error
 	c.cfg.Logger.Debug("Connecting to tunnel", "cfg", c.cfg)
+
+	// Update configuration metrics
+	c.updateConfigMetrics()
 
 	c.xInst, c.xCfg, err = c.createXrayProxy(link)
 	if err != nil {
@@ -1025,6 +1079,32 @@ func (c *Client) detectProtocol(link string) string {
 		return "shadowsocks"
 	}
 	return "unknown"
+}
+
+// updateConfigMetrics updates Prometheus metrics showing which features are enabled
+func (c *Client) updateConfigMetrics() {
+	// Convert boolean to float64 (0 or 1)
+	toMetricValue := func(enabled bool) float64 {
+		if enabled {
+			return 1
+		}
+		return 0
+	}
+
+	goxrayConfigIPv6Enabled.Set(toMetricValue(c.cfg.EnableIPv6))
+	goxrayConfigDNSProtectionEnabled.Set(toMetricValue(c.cfg.EnableDNSProtection))
+	goxrayConfigKillSwitchEnabled.Set(toMetricValue(c.cfg.EnableKillSwitch))
+	goxrayConfigMetricsEnabled.Set(toMetricValue(c.cfg.MetricsPort > 0))
+	goxrayConfigTLSInsecureAllowed.Set(toMetricValue(c.cfg.TLSAllowInsecure))
+	goxrayConfigE2ECheckEnabled.Set(toMetricValue(c.cfg.E2ECheckURL != ""))
+
+	c.cfg.Logger.Debug("Configuration metrics updated",
+		"ipv6_enabled", c.cfg.EnableIPv6,
+		"dns_protection_enabled", c.cfg.EnableDNSProtection,
+		"kill_switch_enabled", c.cfg.EnableKillSwitch,
+		"metrics_enabled", c.cfg.MetricsPort > 0,
+		"tls_insecure_allowed", c.cfg.TLSAllowInsecure,
+		"e2e_check_enabled", c.cfg.E2ECheckURL != "")
 }
 
 // startMetricsUpdate starts goroutine to update metrics periodically
