@@ -31,6 +31,7 @@ Options for --from-raw mode:
   --timeout <duration>          - timeout per server health check (default: 5s)
   --ipv6                        - enable IPv6 support (default: false)
   --dns-protection              - enable DNS leak protection (default: false)
+  --kill-switch                 - enable kill switch to block traffic on VPN disconnect (default: false)
 
 Reconnection options (auto-reconnect when all servers fail):
   --max-retries <n>             - max reconnection attempts (0 = unlimited, default: 0)
@@ -64,6 +65,7 @@ func main() {
 	var timeout time.Duration = 5 * time.Second
 	var enableIPv6 bool = false
 	var enableDNSProtection bool = false
+	var enableKillSwitch bool = false
 
 	// Prometheus metrics configuration
 	var metricsPort int = 0 // Default: disabled
@@ -141,6 +143,8 @@ func main() {
 			enableIPv6 = true
 		case "--dns-protection":
 			enableDNSProtection = true
+		case "--kill-switch":
+			enableKillSwitch = true
 		case "--metrics-port":
 			if i+1 >= len(args) {
 				log.Fatal("--metrics-port requires a port number")
@@ -295,6 +299,10 @@ func main() {
 			enableDNSProtection = true
 		}
 
+		if !enableKillSwitch && appConfig.Connection.EnableKillSwitch {
+			enableKillSwitch = true
+		}
+
 		// Server selection settings (CLI overrides config)
 		if refreshInterval == 0 && appConfig.ServerSelection.RefreshInterval != "" {
 			var err error
@@ -381,6 +389,7 @@ func main() {
 		EnableIPv6:          enableIPv6,
 		MetricsPort:         metricsPort,
 		EnableDNSProtection: enableDNSProtection,
+		EnableKillSwitch:    enableKillSwitch,
 		E2ECheckURL:         e2eCheckURL,
 	})
 	if err != nil {
@@ -395,6 +404,10 @@ func main() {
 	
 	if enableDNSProtection {
 		slog.Info("DNS leak protection enabled")
+	}
+
+	if enableKillSwitch {
+		slog.Info("Kill switch enabled - traffic will be blocked on VPN disconnect")
 	}
 	
 	if metricsPort > 0 {
