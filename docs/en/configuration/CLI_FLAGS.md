@@ -1,30 +1,30 @@
-# GoXRay VPN Client - Полное руководство по флагам и конфигурации
+# GoXRay VPN Client - Complete Guide to Flags and Configuration
 
-## Обзор
+## Overview
 
-GoXRay VPN Client поддерживает запуск как через аргументы командной строки, так и через YAML конфигурационные файлы. CLI аргументы имеют приоритет над значениями из конфигурационного файла.
+GoXRay VPN Client supports launching both through command-line arguments and through YAML configuration files. CLI arguments take priority over values from the configuration file.
 
-## Способы запуска
+## Launch Methods
 
-### 1. Прямая ссылка на сервер
+### 1. Direct Server Link
 
 ```bash
 sudo goxray "vless://uuid@server.example.com:443?type=tcp&security=reality&..."
 ```
 
-### 2. Из конфигурационного файла
+### 2. From Configuration File
 
 ```bash
 sudo goxray --config /path/to/config.yaml
 ```
 
-### 3. Из списка серверов (raw URL)
+### 3. From Server List (raw URL)
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt
 ```
 
-### 4. Через переменную окружения
+### 4. Via Environment Variable
 
 ```bash
 export GOXRAY_CONFIG_URL="vless://uuid@server.example.com:443?..."
@@ -33,41 +33,41 @@ sudo goxray
 
 ---
 
-## Все доступные флаги
+## All Available Flags
 
-### 🔗 Параметры подключения
+### 🔗 Connection Parameters
 
-#### Прямая ссылка
+#### Direct Link
 
 ```bash
-<vless://...>  # Позиционный аргумент - прямая ссылка на сервер
+<vless://...>  # Positional argument - direct server link
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray "vless://a6b071ef-0d82-4f46-b04b-3310b8d6ca82@3.112.126.206:54055?type=tcp&security=reality&pbk=..."
 ```
 
-#### Конфигурационный файл
+#### Configuration File
 
 ```bash
---config <path>  # Путь к YAML конфигурационному файлу
+--config <path>  # Path to YAML configuration file
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --config /etc/goxray/config.yaml
 ```
 
-#### Список серверов из URL
+#### Server List from URL
 
 ```bash
---from-raw <url>  # URL для получения списка VLESS ссылок
+--from-raw <url>  # URL for fetching VLESS links list
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://raw.githubusercontent.com/user/repo/main/links.txt
@@ -75,111 +75,111 @@ sudo goxray --from-raw https://raw.githubusercontent.com/user/repo/main/links.tx
 
 ---
 
-### 🔄 Параметры обновления списка серверов
+### 🔄 Server List Update Parameters
 
-#### Интервал обновления
+#### Update Interval
 
 ```bash
---refresh-interval <duration>  # Периодическое обновление списка серверов
+--refresh-interval <duration>  # Periodic server list update
 ```
 
-**Формат:** `5m`, `10m`, `1h`, `30m` и т.д.
+**Format:** `5m`, `10m`, `1h`, `30m`, etc.
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --refresh-interval 10m
 ```
 
-**По умолчанию:** `0` (обновление отключено)
+**Default:** `0` (update disabled)
 
-#### Максимальное количество серверов
+#### Maximum Number of Servers
 
 ```bash
---max-servers <n>  # Максимальное количество серверов для проверки
+--max-servers <n>  # Maximum number of servers to check
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --max-servers 20
 ```
 
-**По умолчанию:** `10`
+**Default:** `10`
 
 ---
 
-### 🔗 Параметры переподключения (Connection Persistence & Auto-Reconnect)
+### 🔗 Reconnection Parameters (Connection Persistence & Auto-Reconnect)
 
-Управляют поведением клиента, когда все серверы в списке исчерпаны. Клиент автоматически переходит в режим переподключения с экспоненциальной задержкой.
+Controls client behavior when all servers in the list are exhausted. Client automatically enters reconnection mode with exponential backoff.
 
-#### Максимальное количество попыток
+#### Maximum Retry Attempts
 
 ```bash
---max-retries <n>  # Максимальное количество попыток переподключения
+--max-retries <n>  # Maximum number of reconnection attempts
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --max-retries 5
 ```
 
-**По умолчанию:** `0` (безлимитные попытки, до остановки через Ctrl+C)
+**Default:** `0` (unlimited attempts, until stopped via Ctrl+C)
 
-#### Минимальная задержка
+#### Minimum Backoff Delay
 
 ```bash
---min-backoff <duration>  # Начальная задержка перед переподключением
+--min-backoff <duration>  # Initial delay before reconnection
 ```
 
-**Формат:** `5s`, `10s`, `30s` и т.д.
+**Format:** `5s`, `10s`, `30s`, etc.
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --min-backoff 10s
 ```
 
-**По умолчанию:** `5s`
+**Default:** `5s`
 
-#### Максимальная задержка
+#### Maximum Backoff Delay
 
 ```bash
---max-backoff <duration>  # Максимальная задержка перед переподключением
+--max-backoff <duration>  # Maximum delay before reconnection
 ```
 
-**Формат:** `5m`, `10m`, `30m` и т.д.
+**Format:** `5m`, `10m`, `30m`, etc.
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --max-backoff 10m
 ```
 
-**По умолчанию:** `5m`
+**Default:** `5m`
 
-#### Коэффициент экспоненциального роста
+#### Exponential Growth Factor
 
 ```bash
---backoff-factor <factor>  # Множитель для экспоненциальной задержки
+--backoff-factor <factor>  # Multiplier for exponential backoff
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --backoff-factor 3.0
 ```
 
-**По умолчанию:** `2.0`
+**Default:** `2.0`
 
-**Формула расчета:**
+**Calculation Formula:**
 
 ```
 backoff(n) = min(min_backoff × factor^(n-1) + jitter, max_backoff)
 ```
 
-**Пример последовательности (по умолчанию):**
+**Example Sequence (default):**
 
 ```
 Attempt 1: 5s    (min_backoff)
@@ -192,343 +192,343 @@ Attempt 7: 5m    (capped at max_backoff)
 ...
 ```
 
-_Фактическое время может отличаться на ±25% из-за jitter для распределения нагрузки._
+_Actual time may vary by ±25% due to jitter for load distribution._
 
 ---
 
-### 🏥 E2E Проверка трафика (End-to-End Health Check)
+### 🏥 E2E Traffic Verification (End-to-End Health Check)
 
-Выполняет реальный HTTP запрос через VPN туннель для обнаружения тихих обрывов соединения (ошибки TLS EOF).
+Performs real HTTP request through VPN tunnel to detect silent connection drops (TLS EOF errors).
 
 ```bash
---e2e-check-url <url>  # HTTP URL для проверки прохождения трафика
+--e2e-check-url <url>  # HTTP URL for traffic verification
 ```
 
-**Как это работает:**
+**How it works:**
 
-1. Открывает SOCKS5 соединение
-2. Отправляет SOCKS5 CONNECT к целевому хосту (через туннель)
-3. Выполняет HTTP GET запрос (через туннель)
-4. Проверяет получение корректного HTTP ответа
-5. При 3 ошибках подряд → автоматический failover на следующий сервер
+1. Opens SOCKS5 connection
+2. Sends SOCKS5 CONNECT to target host (through tunnel)
+3. Performs HTTP GET request (through tunnel)
+4. Checks for correct HTTP response
+5. After 3 consecutive errors → automatic failover to next server
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt \
   --e2e-check-url "http://ipinfo.io/ip"
 ```
 
-**Используйте HTTP URL** (не HTTPS), чтобы избежать накладных расходов на TLS:
+**Use HTTP URLs** (not HTTPS) to avoid TLS overhead:
 
 - `http://ipinfo.io/ip`
 - `http://connectivitycheck.gstatic.com/generate_204`
 - `http://httpbin.org/get`
 
-**По умолчанию:** пустая строка (проверка только локального SOCKS, обратная совместимость)
+**Default:** empty string (local SOCKS check only, backward compatibility)
 
 ---
 
-### ⏱️ Таймауты
+### ⏱️ Timeouts
 
-#### Таймаут проверки сервера
+#### Server Check Timeout
 
 ```bash
---timeout <duration>  # Таймаут для каждой проверки сервера
+--timeout <duration>  # Timeout for each server check
 ```
 
-**Формат:** `5s`, `10s`, `30s` и т.д.
+**Format:** `5s`, `10s`, `30s`, etc.
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --timeout 10s
 ```
 
-**По умолчанию:** `5s`
+**Default:** `5s`
 
 ---
 
-### 🌐 Сетевые настройки
+### 🌐 Network Settings
 
-#### IPv6 поддержка
+#### IPv6 Support
 
 ```bash
---ipv6  # Включить поддержку IPv6 (dual-stack)
+--ipv6  # Enable IPv6 support (dual-stack)
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --ipv6
 ```
 
-**По умолчанию:** `false`
+**Default:** `false`
 
-**Что включается:**
+**What gets enabled:**
 
-- Настройка IPv6 адреса на TUN интерфейсе: `fd00:dead:beef::1/64`
-- Маршрутизация IPv6 трафика через VPN
-- Поддержка IPv6 DNS серверов
+- Setup IPv6 addresses on TUN interface: `fd00:dead:beef::1/64`
+- Routing IPv6 traffic through VPN
+- Support for IPv6 DNS servers
 
-#### DNS защита от утечек
+#### DNS Leak Protection
 
 ```bash
---dns-protection  # Включить защиту от утечек DNS
+--dns-protection  # Enable DNS leak protection
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --dns-protection
 ```
 
-**По умолчанию:** `false`
+**Default:** `false`
 
-**Что включается:**
+**What gets enabled:**
 
-- Маршрутизация DNS трафика через TUN интерфейс
-- Добавление маршрутов к публичным DNS серверам (Google, Cloudflare, Quad9)
-- Поддержка как IPv4, так и IPv6 DNS серверов
+- Routing DNS traffic through TUN interface
+- Adding routes to public DNS servers (Google, Cloudflare, Quad9)
+- Support for both IPv4 and IPv6 DNS servers
 
 ---
 
-### 📊 Prometheus метрики
+### 📊 Prometheus Metrics
 
-#### Порт метрик
+#### Metrics Port
 
 ```bash
---metrics-port <port>  # Включить endpoint Prometheus метрик
+--metrics-port <port>  # Enable Prometheus metrics endpoint
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --metrics-port 9090
 ```
 
-**По умолчанию:** `0` (отключено)
+**Default:** `0` (disabled)
 
-**Доступные метрики:**
+**Available Metrics:**
 
-- `vpn_connections_total` - Всего подключений
-- `vpn_disconnections_total` - Всего отключений
-- `vpn_connection_duration_seconds` - Длительность текущего подключения
-- `vpn_bytes_read_total` - Всего байт прочитано
-- `vpn_bytes_written_total` - Всего байт записано
-- `vpn_connected` - Статус подключения (1=подключен, 0=отключен)
-- `vpn_tun_ipv4` - IPv4 адрес TUN интерфейса
-- `vpn_tun_ipv6` - IPv6 адрес TUN интерфейса
-- `vpn_server_ip` - IP адрес VPN сервера
+- `vpn_connections_total` - Total connections
+- `vpn_disconnections_total` - Total disconnections
+- `vpn_connection_duration_seconds` - Current connection duration
+- `vpn_bytes_read_total` - Total bytes read
+- `vpn_bytes_written_total` - Total bytes written
+- `vpn_connected` - Connection status (1=connected, 0=disconnected)
+- `vpn_tun_ipv4` - TUN interface IPv4 address
+- `vpn_tun_ipv6` - TUN interface IPv6 address
+- `vpn_server_ip` - VPN server IP address
 
 **Endpoint:** `http://0.0.0.0:9090/metrics`
 
 ---
 
-### 📝 Настройки логирования
+### 📝 Logging Settings
 
-#### Формат логов
+#### Log Format
 
 ```bash
---log-format <format>  # Формат вывода логов
+--log-format <format>  # Log output format
 ```
 
-**Варианты:** `text`, `json`
+**Options:** `text`, `json`
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --log-format json
 ```
 
-**По умолчанию:** `text`
+**Default:** `text`
 
-#### Уровень логирования
+#### Log Level
 
 ```bash
---log-level <level>  # Уровень детализации логов
+--log-level <level>  # Log verbosity level
 ```
 
-**Варианты:** `debug`, `info`, `warn`, `error`
+**Options:** `debug`, `info`, `warn`, `error`
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --log-level debug
 ```
 
-**По умолчанию:** `info`
+**Default:** `info`
 
-#### Файл логов
+#### Log File
 
 ```bash
---log-file <path>  # Путь к файлу для записи логов
+--log-file <path>  # Path to log file
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --log-file /var/log/goxray/goxray.log
 ```
 
-**По умолчанию:** (только stdout)
+**Default:** (stdout only)
 
-#### Размер файла логов
+#### Log File Size
 
 ```bash
---log-max-size <MB>  # Максимальный размер файла логов перед ротацией
+--log-max-size <MB>  # Maximum log file size before rotation
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --log-file /var/log/goxray/goxray.log --log-max-size 200
 ```
 
-**По умолчанию:** `100` MB
+**Default:** `100` MB
 
-#### Количество резервных файлов
+#### Number of Backup Files
 
 ```bash
---log-max-backups <count>  # Максимальное количество резервных файлов логов
+--log-max-backups <count>  # Maximum number of backup log files
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --log-file /var/log/goxray/goxray.log --log-max-backups 5
 ```
 
-**По умолчанию:** `3`
+**Default:** `3`
 
-#### Возраст резервных файлов
+#### Backup File Age
 
 ```bash
---log-max-age <days>  # Максимальный возраст резервных файлов в днях
+--log-max-age <days>  # Maximum age of backup files in days
 ```
 
-**Пример:**
+**Example:**
 
 ```bash
 sudo goxray --log-file /var/log/goxray/goxray.log --log-max-age 30
 ```
 
-**По умолчанию:** `28` дней
+**Default:** `28` days
 
 ---
 
-## Конфигурационный файл (YAML)
+## Configuration File (YAML)
 
-Все параметры могут быть заданы в YAML файле:
+All parameters can be specified in a YAML file:
 
 ```yaml
-# connection - настройки подключения
+# connection - connection settings
 connection:
-  # Прямая ссылка на сервер (использовать И это ИЛИ from_raw/from_raw_urls)
+  # Direct server link (use EITHER this OR from_raw/from_raw_urls)
   link: "vless://uuid@server.example.com:443?type=tcp&security=reality&..."
 
-  # Один URL для списка серверов (устарело, используйте from_raw_urls)
+  # Single URL for server list (deprecated, use from_raw_urls)
   # from_raw: "https://example.com/links.txt"
 
-  # Несколько URL с поддержкой fallback
+  # Multiple URLs with fallback support
   from_raw_urls:
     - "https://primary.example.com/links.txt"
     - "https://backup1.example.com/links.txt"
     - "https://backup2.example.com/links.txt"
 
-  # Включить IPv6 поддержку
+  # Enable IPv6 support
   enable_ipv6: false
 
-  # Включить защиту от утечек DNS
+  # Enable DNS leak protection
   enable_dns_protection: false
 
-  # Разрешить самоподписанные сертификаты
+  # Allow self-signed certificates
   tls_allow_insecure: false
 
-  # Порт для Prometheus метрик (0 = отключено)
+  # Port for Prometheus metrics (0 = disabled)
   metrics_port: 9090
 
-# server_selection - настройки выбора сервера
+# server_selection - server selection settings
 server_selection:
-  # Интервал обновления списка серверов (например, "5m", "10m", "1h")
+  # Server list update interval (e.g., "5m", "10m", "1h")
   refresh_interval: "10m"
 
-  # Максимальное количество серверов для проверки
+  # Maximum number of servers to check
   max_servers: 10
 
-  # Таймаут проверки каждого сервера
+  # Timeout for each server check
   timeout: "5s"
 
-# reconnection - настройки переподключения (persistence & auto-reconnect)
+# reconnection - reconnection settings (persistence & auto-reconnect)
 reconnection:
-  # Максимальное количество попыток (0 = безлимитно)
+  # Maximum retry attempts (0 = unlimited)
   max_retries: 0
 
-  # Начальная задержка перед переподключением
+  # Initial delay before reconnection
   min_backoff: "5s"
 
-  # Максимальная задержка перед переподключением
+  # Maximum delay before reconnection
   max_backoff: "5m"
 
-  # Множитель экспоненциальной задержки
+  # Exponential backoff multiplier
   backoff_factor: 2.0
 
-# logging - настройки логирования
+# logging - logging settings
 logging:
-  # Формат логов: "text" или "json"
+  # Log format: "text" or "json"
   format: "text"
 
-  # Уровень логирования: "debug", "info", "warn", "error"
+  # Log level: "debug", "info", "warn", "error"
   level: "info"
 
-  # Путь к файлу логов (опционально)
+  # Path to log file (optional)
   # file: "/var/log/goxray/goxray.log"
 
-  # Максимальный размер файла в MB
+  # Maximum file size in MB
   max_size: 100
 
-  # Максимальное количество резервных файлов
+  # Maximum number of backup files
   max_backups: 3
 
-  # Максимальный возраст резервных файлов в днях
+  # Maximum age of backup files in days
   max_age: 28
 
-# health_monitoring - настройки мониторинга здоровья
+# health_monitoring - health monitoring settings
 health_monitoring:
-  # Интервал проверки здоровья
+  # Health check interval
   check_interval: "10s"
 
-  # Таймаут проверки
+  # Check timeout
   timeout: "5s"
 
-  # Максимальное количество попыток перед переключением
+  # Maximum retries before failover
   max_retries: 3
 ```
 
-### Приоритет параметров
+### Parameter Priority
 
-1. **CLI аргументы** (наивысший приоритет)
-2. **Конфигурационный файл**
-3. **Переменные окружения**
-4. **Значения по умолчанию** (наинизший приоритет)
+1. **CLI arguments** (highest priority)
+2. **Configuration file**
+3. **Environment variables**
+4. **Default values** (lowest priority)
 
 ---
 
-## Примеры использования
+## Usage Examples
 
-### Пример 1: Простое подключение
+### Example 1: Simple Connection
 
 ```bash
 sudo goxray "vless://uuid@server:443?type=tcp&security=reality&..."
 ```
 
-### Пример 2: Из списка серверов с автоматическим выбором
+### Example 2: From Server List with Automatic Selection
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt
 ```
 
-### Пример 2a: С авто-переподключением
+### Example 2a: With Auto-Reconnection
 
 ```bash
 sudo goxray \
@@ -539,17 +539,17 @@ sudo goxray \
   --backoff-factor 2.0
 ```
 
-**Что происходит:**
+**What happens:**
 
-1. Загружается список серверов
-2. При неудаче подключения ко всем серверам → ждет 5с
-3. Перезагружает список серверов
-4. Пробует снова
-5. При неудаче → ждет 10с → 20с → 40с ... (до 10м)
-6. После 10 попыток → выход с ошибкой
-7. Ctrl+C в любой момент → graceful shutdown
+1. Server list is loaded
+2. On failure to connect to all servers → waits 5s
+3. Reloads server list
+4. Tries again
+5. On failure → waits 10s → 20s → 40s ... (up to 10m)
+6. After 10 attempts → exits with error
+7. Ctrl+C at any time → graceful shutdown
 
-### Пример 3: Полная конфигурация с логированием
+### Example 3: Full Configuration with Logging
 
 ```bash
 sudo goxray \
@@ -568,10 +568,10 @@ sudo goxray \
   --log-max-age 30
 ```
 
-### Пример 4: Использование конфигурационного файла
+### Example 4: Using Configuration File
 
 ```bash
-# Создать конфигурационный файл
+# Create configuration file
 cat > /etc/goxray/config.yaml << EOF
 connection:
   from_raw_urls:
@@ -606,11 +606,11 @@ health_monitoring:
   max_retries: 3
 EOF
 
-# Запустить с конфигурацией
+# Start with configuration
 sudo goxray --config /etc/goxray/config.yaml
 ```
 
-### Пример 5: Только JSON логирование
+### Example 5: JSON Logging Only
 
 ```bash
 sudo goxray \
@@ -621,72 +621,72 @@ sudo goxray \
 
 ---
 
-## Переменные окружения
+## Environment Variables
 
 ### GOXRAY_CONFIG_URL
 
 ```bash
 export GOXRAY_CONFIG_URL="vless://uuid@server:443?..."
-sudo goxray  # Использует ссылку из переменной окружения
+sudo goxray  # Uses link from environment variable
 ```
 
 ---
 
-## Важные замечания
+## Important Notes
 
-### Требования к запуску
+### Launch Requirements
 
-1. **sudo** - требуется для работы с сетевыми интерфейсами
-2. **Linux capabilities** (опционально):
+1. **sudo** - required for working with network interfaces
+2. **Linux capabilities** (optional):
    ```bash
    sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/local/bin/goxray
    ```
 
-### Поддерживаемые ОС
+### Supported OS
 
-- **Linux** (протестировано on Ubuntu 24.10, Debian 13)
-- **macOS** (протестировано on Sequoia 15.1.1)
+- **Linux** (tested on Ubuntu 24.10, Debian 13)
+- **macOS** (tested on Sequoia 15.1.1)
 
-### Ограничения
+### Limitations
 
-- Максимум 10 одновременных проверок серверов (настраивается через `--max-servers`)
-- Таймаут проверки по умолчанию 5 секунд
-- Максимальный размер файла логов 100MB (настраивается)
+- Maximum 10 concurrent server checks (configurable via `--max-servers`)
+- Default check timeout 5 seconds
+- Maximum log file size 100MB (configurable)
 
 ---
 
-## Диагностика и troubleshooting
+## Diagnostics and Troubleshooting
 
-### Проверка доступных флагов
+### Verify Available Flags
 
 ```bash
 sudo goxray --help
 ```
 
-### Включение debug логирования
+### Enable Debug Logging
 
 ```bash
 sudo goxray --from-raw https://example.com/links.txt --log-level debug
 ```
 
-### Просмотр Prometheus метрик
+### View Prometheus Metrics
 
 ```bash
 curl http://localhost:9090/metrics
 ```
 
-### Проверка статуса подключения
+### Verify Connection Status
 
 ```bash
-# В логах будет выводиться каждые 30 секунд:
+# Logs will output every 30 seconds:
 # VPN Connection Status: connected, tun_interface=tun0, xray_server=3.112.126.206
 ```
 
 ---
 
-## Дополнительные ресурсы
+## Additional Resources
 
-- [README.md](README.md) - Общая информация и примеры
-- [HEALTH_MONITORING.md](HEALTH_MONITORING.md) - Детали системы мониторинга здоровья
-- [PERIODIC_REFRESH.md](PERIODIC_REFRESH.md) - Настройки периодического обновления
-- [DEPLOYMENT_DEBIAN13.md](DEPLOYMENT_DEBIAN13.md) - Инструкция по развертыванию
+- [README.md](README.md) - General information and examples
+- [HEALTH_MONITORING.md](HEALTH_MONITORING.md) - Health monitoring system details
+- [PERIODIC_REFRESH.md](PERIODIC_REFRESH.md) - Periodic update settings
+- [DEPLOYMENT_DEBIAN13.md](DEPLOYMENT_DEBIAN13.md) - Deployment instructions

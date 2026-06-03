@@ -1,150 +1,153 @@
-# 📦 Сборка и установка GoXRay на Debian 13
+# 📦 Building and Installing GoXRay on Debian 13
 
-## ✅ Готовый бинарный файл
+## ✅ Ready Binary File
 
-**Файл**: `goxray_linux_amd64`  
-**Размер**: ~45.7 MB  
-**Архитектура**: Linux amd64 (x86_64)  
-**Статус**: ✅ Скомпилирован и готов к использованию
+**File**: `goxray_linux_amd64`  
+**Size**: ~45.7 MB  
+**Architecture**: Linux amd64 (x86_64)  
+**Status**: ✅ Compiled and ready to use
 
 ---
 
-## 🚀 Быстрый старт
+## 🚀 Quick Start
 
-### Способ 1: Простое копирование
+### Method 1: Simple Copy
 
 ```bash
-# 1. Скопируйте файл goxray_linux_amd64 на Debian сервер
+# 1. Copy goxray_linux_amd64 file to Debian server
 scp goxray_linux_amd64 user@debian:/usr/local/bin/goxray
 
-# 2. На Debian сервере:
+# 2. On Debian server:
 ssh user@debian
 
-# Сделать исполняемым
+# Make executable
 sudo chmod +x /usr/local/bin/goxray
 
-# Настроить права
+# Configure permissions
 sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/local/bin/goxray
 
-# Запустить
+# Start
 sudo goxray --from-raw https://example.com/links.txt
 ```
 
-### Способ 2: Автоматическая установка
+### Method 2: Automated Installation
 
 ```bash
-# 1. Скопируйте файлы на сервер:
+# 1. Copy files to server:
 scp goxray_linux_amd64 install_goxray.sh user@debian:/tmp/
 
-# 2. Запустите скрипт установки:
+# 2. Run installation script:
 ssh user@debian
 cd /tmp
 chmod +x install_goxray.sh
 sudo ./install_goxray.sh
 ```
 
-Скрипт автоматически:
-- Установит необходимые зависимости
-- Проверит модуль TUN
-- Установит бинарный файл
-- Настроит capabilities
-- Предложит создать systemd сервис
+The script automatically:
+
+- Installs necessary dependencies
+- Checks TUN module
+- Installs binary file
+- Configures capabilities
+- Offers to create systemd service
 
 ---
 
-## 📋 Системные требования
+## 📋 System Requirements
 
-### Минимальные требования
+### Minimum Requirements
 
-- **ОС**: Debian 13 (Bookworm) или новее
-- **Архитектура**: amd64 (x86_64)
-- **Ядро**: 4.0+ с поддержкой TUN/TAP
-- **RAM**: 128 MB минимум
-- **Диск**: 100 MB свободного места
+- **OS**: Debian 13 (Bookworm) or newer
+- **Architecture**: amd64 (x86_64)
+- **Kernel**: 4.0+ with TUN/TAP support
+- **RAM**: 128 MB minimum
+- **Disk**: 100 MB free space
 
-### Необходимые пакеты
+### Required Packages
 
 ```bash
 sudo apt update
 sudo apt install -y iproute2 iputils-ping curl ca-certificates
 ```
 
-### Проверка TUN модуля
+### TUN Module Verification
 
 ```bash
-# Проверить загрузку модуля
+# Check module loading
 lsmod | grep tun
 
-# Если не загружен, загрузить
+# If not loaded, load it
 sudo modprobe tun
 
-# Проверить устройство
+# Check device
 ls -la /dev/net/tun
 ```
 
 ---
 
-## 🔧 Ручная установка (по шагам)
+## 🔧 Manual Installation (Step by Step)
 
-### Шаг 1: Копирование файла
+### Step 1: Copy File
 
 ```bash
 sudo cp goxray_linux_amd64 /usr/local/bin/goxray
 sudo chmod +x /usr/local/bin/goxray
 ```
 
-### Шаг 2: Настройка прав доступа
+### Step 2: Configure Permissions
 
-Есть два варианта:
+There are two options:
 
-**Вариант A: Запуск от root**
+**Option A: Run as root**
+
 ```bash
 sudo goxray --from-raw https://example.com/links.txt
 ```
 
-**Вариант B: Использование capabilities (рекомендуется)**
+**Option B: Use capabilities (recommended)**
+
 ```bash
 sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/local/bin/goxray
 
-# Теперь можно запускать без sudo
+# Now can run without sudo
 goxray --from-raw https://example.com/links.txt
 ```
 
-### Шаг 3: Проверка работы
+### Step 3: Verify Operation
 
 ```bash
-# Проверить доступность
+# Check availability
 goxray --help
 
-# Тестовое подключение
+# Test connection
 sudo goxray --from-raw https://example.com/links.txt
 ```
 
 ---
 
-## 🐳 Docker установка (альтернатива)
+## 🐳 Docker Installation (Alternative)
 
-### Сборка образа
+### Build Image
 
 ```bash
-# На Windows (из директории проекта)
+# On Windows (from project directory)
 docker build -t goxray .
 
-# Или с указанием платформы
+# Or with platform specification
 docker build --platform linux/amd64 -t goxray .
 ```
 
-### Запуск контейнера
+### Run Container
 
 ```bash
-# С raw списком
+# With raw list
 docker run --rm -it \
   --cap-add NET_ADMIN \
   --cap-add NET_RAW \
   --device /dev/net/tun:/dev/net/tun \
   goxray --from-raw https://example.com/links.txt
 
-# С прямой ссылкой
+# With direct link
 docker run --rm -it \
   --cap-add NET_ADMIN \
   --cap-add NET_RAW \
@@ -154,10 +157,10 @@ docker run --rm -it \
 
 ### Docker Compose
 
-Создайте `docker-compose.yml`:
+Create `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   goxray:
@@ -177,7 +180,8 @@ volumes:
   goxray-data:
 ```
 
-Запуск:
+Launch:
+
 ```bash
 docker-compose up -d
 docker-compose logs -f
@@ -185,137 +189,143 @@ docker-compose logs -f
 
 ---
 
-## 🎯 Использование
+## 🎯 Usage
 
-### Базовые команды
+### Basic Commands
 
 ```bash
-# Подключение из raw списка (рекомендуется)
+# Connect from raw list (recommended)
 sudo goxray --from-raw https://example.com/links.txt
 
-# Прямое подключение
+# Direct connection
 sudo goxray vless://uuid@server.com:443
 
-# Помощь
+# Help
 goxray --help
 ```
 
-### Управление через systemd (если установлен сервис)
+### Management via systemd (if service installed)
 
 ```bash
-# Запуск
+# Start
 sudo systemctl start goxray
 
-# Автозапуск при загрузке
+# Auto-start on boot
 sudo systemctl enable goxray
 
-# Просмотр статуса
+# View status
 sudo systemctl status goxray
 
-# Логи в реальном времени
+# Real-time logs
 sudo journalctl -u goxray -f
 
-# Остановка
+# Stop
 sudo systemctl stop goxray
 
-# Перезапуск
+# Restart
 sudo systemctl restart goxray
 ```
 
 ---
 
-## 🔍 Диагностика
+## 🔍 Diagnostics
 
-### Проверка подключения
+### Verify Connection
 
 ```bash
-# Проверить маршрут по умолчанию
+# Check default route
 ip route show
 
-# Проверить DNS
+# Check DNS
 nslookup google.com
 
-# Проверить внешний IP
+# Check external IP
 curl -s https://api.ipify.org
 
-# Пинг тест
+# Ping test
 ping -c 4 google.com
 ```
 
-### Логи и ошибки
+### Logs and Errors
 
 ```bash
-# Просмотр логов systemd
+# View systemd logs
 sudo journalctl -u goxray -n 50
 
-# Логи с момента последней загрузки
+# Logs since last boot
 sudo journalctl -u goxray -b
 
-# Debug режим
+# Debug mode
 sudo RUST_LOG=debug goxray --from-raw https://example.com/links.txt
 ```
 
-### Распространенные проблемы
+### Common Issues
 
-**Проблема: "permission denied"**
+**Issue: "permission denied"**
+
 ```bash
-# Решение
+# Solution
 sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/local/bin/goxray
 ```
 
-**Проблема: "TUN device not found"**
+**Issue: "TUN device not found"**
+
 ```bash
-# Загрузить модуль
+# Load module
 sudo modprobe tun
 
-# Создать устройство вручную
+# Create device manually
 sudo mkdir -p /dev/net
 sudo mknod /dev/net/tun c 10 200
 sudo chmod 600 /dev/net/tun
 ```
 
-**Проблема: "no available servers"**
+**Issue: "no available servers"**
+
 ```bash
-# Проверить доступность URL
+# Check URL availability
 curl -I https://example.com/links.txt
 
-# Проверить формат ссылок
+# Check link format
 cat links.txt
 
-# Тест одного сервера вручную
+# Test single server manually
 sudo goxray vless://uuid@server.com:443
 ```
 
 ---
 
-## 📊 Информация о файлах проекта
+## 📊 Project Files Information
 
-| Файл | Описание | Размер |
-|------|----------|--------|
-| `goxray_linux_amd64` | Готовый бинарник для Debian | ~45.7 MB |
-| `install_goxray.sh` | Скрипт автоматической установки | ~3 KB |
-| `INSTALL_DEBIAN.md` | Полная инструкция по установке | ~8 KB |
-| `Dockerfile` | Образ Docker для контейнеризации | ~1 KB |
-| `.dockerignore` | Исключения для Docker | ~0.5 KB |
+| File                 | Description                       | Size     |
+| -------------------- | --------------------------------- | -------- |
+| `goxray_linux_amd64` | Ready binary for Debian           | ~45.7 MB |
+| `install_goxray.sh`  | Automated installation script     | ~3 KB    |
+| `INSTALL_DEBIAN.md`  | Complete installation guide       | ~8 KB    |
+| `Dockerfile`         | Docker image for containerization | ~1 KB    |
+| `.dockerignore`      | Docker exclusions                 | ~0.5 KB  |
 
 ---
 
-## 🔐 Безопасность
+## 🔐 Security
 
-### Рекомендации
+### Recommendations
 
-1. **Используйте capabilities вместо root**:
+1. **Use capabilities instead of root**:
+
    ```bash
    sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/local/bin/goxray
    ```
 
-2. **Всегда используйте HTTPS** для загрузки списков серверов:
+2. **Always use HTTPS** for loading server lists:
+
    ```bash
    ✅ goxray --from-raw https://example.com/links.txt
    ❌ goxray --from-raw http://example.com/links.txt
    ```
 
-3. **Настройте firewall**:
+3. **Configure firewall**:
+
    ```bash
    sudo ufw default deny outgoing
    sudo ufw allow out 443/tcp
@@ -323,28 +333,29 @@ sudo goxray vless://uuid@server.com:443
    sudo ufw enable
    ```
 
-4. **Регулярно обновляйте** бинарный файл при выходе новых версий
+4. **Regularly update** binary file when new versions are released
 
 ---
 
-## 📞 Поддержка
+## 📞 Support
 
-При возникновении проблем:
+If you encounter problems:
 
-1. 📖 Проверьте [INSTALL_DEBIAN.md](INSTALL_DEBIAN.md) - полная документация
-2. 🔍 Просмотрите логи: `sudo journalctl -u goxray -f`
-3. ✅ Убедитесь в загрузке TUN: `lsmod | grep tun`
-4. 🔐 Проверьте права: `getcap /usr/local/bin/goxray`
-5. 🌐 Протестируйте сеть: `ping`, `curl`, `traceroute`
+1. 📖 Check [INSTALL_DEBIAN.md](INSTALL_DEBIAN.md) - complete documentation
+2. 🔍 View logs: `sudo journalctl -u goxray -f`
+3. ✅ Ensure TUN is loaded: `lsmod | grep tun`
+4. 🔐 Check permissions: `getcap /usr/local/bin/goxray`
+5. 🌐 Test network: `ping`, `curl`, `traceroute`
 
 ---
 
-## 🎉 Готово!
+## 🎉 Ready!
 
-Бинарный файл **`goxray_linux_amd64`** успешно собран и готов к использованию на Debian 13!
+Binary file **`goxray_linux_amd64`** successfully built and ready to use on Debian 13!
 
-**Следующие шаги:**
-1. Скопируйте файл на Debian сервер
-2. Выполните установку (ручную или автоматическую)
-3. Настройте VPN подключение
-4. Наслаждайтесь безопасным соединением! 🚀
+**Next steps:**
+
+1. Copy file to Debian server
+2. Perform installation (manual or automated)
+3. Configure VPN connection
+4. Enjoy secure connection! 🚀

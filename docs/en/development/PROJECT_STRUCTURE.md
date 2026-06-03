@@ -1,53 +1,55 @@
-# Структура проекта после модификации
+# Project Structure After Modifications
 
 ```
 gotun_with_raw/
 │
-├── main.go                          [ОБНОВЛЕН] - Точка входа с поддержкой --from-raw
+├── main.go                          [UPDATED] - Entry point with --from-raw support
 ├── go.mod
 ├── go.sum
-├── README.md                        [ОБНОВЛЕН] - Документация новой функциональности
-├── example_links.txt                [НОВЫЙ] - Пример raw списка
-├── CHANGELOG_NEW.md                 [НОВЫЙ] - Детальное описание изменений
-├── RU_SUMMARY.md                    [НОВЫЙ] - Сводка на русском языке
+├── README.md                        [UPDATED] - Documentation of new functionality
+├── example_links.txt                [NEW] - Example raw list
+├── CHANGELOG_NEW.md                 [NEW] - Detailed description of changes
+├── RU_SUMMARY.md                    [NEW] - Summary in Russian
 │
 └── pkg/
     └── client/
-        ├── client.go                [БЕЗ ИЗМЕНЕНИЙ] - Основной VPN клиент
-        ├── interfaces.go            [ОБНОВЛЕН] - Добавлен Logger interface
-        ├── metrics.go               [БЕЗ ИЗМЕНЕНИЙ] - Метрики трафика
-        ├── metrics_test.go          [БЕЗ ИЗМЕНЕНИЙ] - Тесты метрик
+        ├── client.go                [UNCHANGED] - Main VPN client
+        ├── interfaces.go            [UPDATED] - Added Logger interface
+        ├── metrics.go               [UNCHANGED] - Traffic metrics
+        ├── metrics_test.go          [UNCHANGED] - Metrics tests
         │
-        ├── link_parser.go           [НОВЫЙ] - Парсинг VLESS ссылок
-        ├── link_parser_test.go      [НОВЫЙ] - Тесты парсера
+        ├── link_parser.go           [NEW] - VLESS link parsing
+        ├── link_parser_test.go      [NEW] - Parser tests
         │
-        ├── server_selector.go       [НОВЫЙ] - Выбор оптимального сервера
-        ├── server_selector_test.go  [НОВЫЙ] - Тесты селектора
+        ├── server_selector.go       [NEW] - Optimal server selection
+        ├── server_selector_test.go  [NEW] - Selector tests
         │
-        ├── slog_adapter.go          [НОВЫЙ] - Адаптер для slog.Logger
+        ├── slog_adapter.go          [NEW] - Adapter for slog.Logger
         │
         └── mocks/
-            └── client_mocks.go      [БЕЗ ИЗМЕНЕНИЙ] - Mock'и для тестов
+            └── client_mocks.go      [UNCHANGED] - Mocks for tests
 ```
 
 ---
 
-## 📁 Описание файлов
+## 📁 File Descriptions
 
-### Основные файлы (изменены)
+### Main Files (modified)
 
-**`main.go`** (90 строк)
+**`main.go`** (90 lines)
+
 ```go
-// Добавлена поддержка CLI флагов:
-//   --from-raw <URL>  - загрузка списка серверов из raw URL
-// 
+// Added CLI flags support:
+//   --from-raw <URL>  - load server list from raw URL
+//
 // Workflow:
 // 1. Parse args → 2. Fetch links → 3. Select best → 4. Connect
 ```
 
-**`pkg/client/interfaces.go`** (37 строк, +5 строк)
+**`pkg/client/interfaces.go`** (37 lines, +5 lines)
+
 ```go
-// Добавлен интерфейс:
+// Added interface:
 type Logger interface {
     Debug(msg string, keysAndValues ...interface{})
     Info(msg string, keysAndValues ...interface{})
@@ -57,33 +59,36 @@ type Logger interface {
 
 ---
 
-### Новые файлы
+### New Files
 
-**`pkg/client/link_parser.go`** (79 строк)
+**`pkg/client/link_parser.go`** (79 lines)
+
 ```go
-// Ключевые функции:
+// Key functions:
 - NewLinkParser(logger Logger) *LinkParser
 - ParseLinksFromRaw(rawText string) []string
 - ValidateLink(link string) error
 - isValidVLESSLink(link string) bool
 ```
 
-**`pkg/client/server_selector.go`** (229 строк)
+**`pkg/client/server_selector.go`** (229 lines)
+
 ```go
-// Ключевые функции:
+// Key functions:
 - NewServerSelector(logger, timeout, maxConcurrent) *ServerSelector
 - FetchRawLinks(rawURL string) ([]string, error)
 - CheckLatency(link string) (time.Duration, error)
 - SelectBest(links []string) (*ServerInfo, error)
 - SelectBestFromURL(rawURL string) (*ServerInfo, error)
 
-// Вспомогательные:
+// Helper functions:
 - extractHostPort(link string) (string, string, error)
 ```
 
-**`pkg/client/slog_adapter.go`** (28 строк)
+**`pkg/client/slog_adapter.go`** (28 lines)
+
 ```go
-// Адаптирует slog.Logger к интерфейсу Logger:
+// Adapts slog.Logger to Logger interface:
 - NewSlogAdapter(logger *slog.Logger) Logger
 - Debug(msg string, keysAndValues ...interface{})
 - Info(msg string, keysAndValues ...interface{})
@@ -92,135 +97,149 @@ type Logger interface {
 
 ---
 
-### Тестовые файлы
+### Test Files
 
-**`pkg/client/link_parser_test.go`** (81 строка)
+**`pkg/client/link_parser_test.go`** (81 lines)
+
 ```go
-// Тест кейсы:
-- TestLinkParser_ParseLinksFromRaw (валидные ссылки, комментарии, пустые строки)
-- TestLinkParser_isValidVLESSLink (различные форматы URL)
-- TestLinkParser_ValidateLink (обработка ошибок)
+// Test cases:
+- TestLinkParser_ParseLinksFromRaw (valid links, comments, empty lines)
+- TestLinkParser_isValidVLESSLink (various URL formats)
+- TestLinkParser_ValidateLink (error handling)
 ```
 
-**`pkg/client/server_selector_test.go`** (160 строк)
+**`pkg/client/server_selector_test.go`** (160 lines)
+
 ```go
-// Тест кейсы:
-- TestServerSelector_FetchRawLinks (HTTP запросы, ошибки сервера)
-- TestServerSelector_CheckLatency (недоступные сервера, неверный формат)
-- TestServerSelector_SelectBest (пустой список, все недоступны)
-- TestServerSelector_extractHostPort (парсинг различных форматов)
-- TestNewServerSelector_Defaults (настройки по умолчанию)
-- TestServerSelector_ConcurrentChecking (конкурентность)
+// Test cases:
+- TestServerSelector_FetchRawLinks (HTTP requests, server errors)
+- TestServerSelector_CheckLatency (unavailable servers, invalid format)
+- TestServerSelector_SelectBest (empty list, all unavailable)
+- TestServerSelector_extractHostPort (parsing various formats)
+- TestNewServerSelector_Defaults (default settings)
+- TestServerSelector_ConcurrentChecking (concurrency)
 ```
 
 ---
 
-### Документация
+### Documentation
 
-**`README.md`** (+~80 строк)
-- Новая секция "Automatic Server Selection"
-- Примеры использования CLI с --from-raw
-- Формат raw списка
-- 3 примера использования как библиотеки
-- Конфигурационные параметры
+**`README.md`** (+~80 lines)
 
-**`example_links.txt`** (10 строк)
-- Шаблон для создания собственного списка серверов
-- Примеры валидных VLESS ссылок
-- Комментарии
+- New section "Automatic Server Selection"
+- Examples of CLI usage with --from-raw
+- Raw list format
+- 3 examples of library usage
+- Configuration parameters
 
-**`CHANGELOG_NEW.md`** (120 строк)
-- Детальное описание всех изменений
+**`example_links.txt`** (10 lines)
+
+- Template for creating own server list
+- Examples of valid VLESS links
+- Comments
+
+**`CHANGELOG_NEW.md`** (120 lines)
+
+- Detailed description of all changes
 - API changes
 - Backward compatibility notes
 - Usage examples
 
-**`RU_SUMMARY.md`** (250+ строк)
-- Полная сводка на русском языке
-- Алгоритм работы
-- Технические детали
-- Примеры интеграции
-- Метрики производительности
+**`RU_SUMMARY.md`** (250+ lines)
+
+- Complete summary in Russian
+- Algorithm description
+- Technical details
+- Integration examples
+- Performance metrics
 
 ---
 
-## 📊 Статистика изменений
+## 📊 Change Statistics
 
-| Категория | Количество |
-|-----------|------------|
-| **Новых файлов** | 7 |
-| **Изменено файлов** | 2 |
-| **Строк кода добавлено** | ~600 |
-| **Строк тестов добавлено** | ~240 |
-| **Строк документации** | ~450 |
-| **Итого строк** | ~1290 |
+| Category                   | Count |
+| -------------------------- | ----- |
+| **New files**              | 7     |
+| **Modified files**         | 2     |
+| **Lines of code added**    | ~600  |
+| **Lines of tests added**   | ~240  |
+| **Lines of documentation** | ~450  |
+| **Total lines**            | ~1290 |
 
-### Распределение по языкам
+### Distribution by Language
 
-- **Go code**: ~840 строк
-- **Tests**: ~240 строк  
-- **Documentation**: ~450 строк (Markdown)
+- **Go code**: ~840 lines
+- **Tests**: ~240 lines
+- **Documentation**: ~450 lines (Markdown)
 
 ---
 
-## 🎯 Ключевые особенности реализации
+## 🎯 Key Implementation Features
 
-### 1. Модульность
-Каждый компонент отвечает за одну функцию:
-- `link_parser` - только парсинг
-- `server_selector` - только выбор сервера
-- `slog_adapter` - только адаптация логирования
+### 1. Modularity
 
-### 2. Тестируемость
-- Все зависимости через интерфейсы
-- Comprehensive unit тесты
-- Mock'и для внешних зависимостей
+Each component is responsible for one function:
 
-### 3. Производительность
-- Параллельная проверка серверов (semaphore pattern)
-- Настраиваемый concurrency
-- Timeout на каждую проверку
+- `link_parser` - only parsing
+- `server_selector` - only server selection
+- `slog_adapter` - only logging adaptation
 
-### 4. Надежность
-- Валидация всех входных данных
-- Обработка ошибок на каждом этапе
+### 2. Testability
+
+- All dependencies through interfaces
+- Comprehensive unit tests
+- Mocks for external dependencies
+
+### 3. Performance
+
+- Parallel server checking (semaphore pattern)
+- Configurable concurrency
+- Timeout for each check
+
+### 4. Reliability
+
+- Validation of all input data
+- Error handling at each stage
 - Graceful degradation
 
-### 5. Документирование
-- README обновлен с примерами
-- Inline comments в коде
-- Отдельные файлы с объяснениями
+### 5. Documentation
+
+- README updated with examples
+- Inline comments in code
+- Separate files with explanations
 
 ---
 
-## ✅ Чеклист качества
+## ✅ Quality Checklist
 
-- [x] Синтаксических ошибок нет
-- [x] Все импорты используются
-- [x] Интерфейсы согласованы
-- [x] Тесты покрывают ключевую логику
-- [x] Документация актуальна
-- [x] Обратная совместимость сохранена
-- [x] Код следует Go best practices
-- [x] Error handling реализован корректно
-- [x] Logging интегрирован единообразно
+- [x] No syntax errors
+- [x] All imports are used
+- [x] Interfaces are consistent
+- [x] Tests cover key logic
+- [x] Documentation is up to date
+- [x] Backward compatibility preserved
+- [x] Code follows Go best practices
+- [x] Error handling implemented correctly
+- [x] Logging integrated uniformly
 
 ---
 
-## 🚀 Готовность к использованию
+## 🚀 Ready to Use
 
-Проект **полностью готов** к использованию! 
+Project is **fully ready** to use!
 
-Для запуска:
+To run:
+
 ```bash
-# Старый способ (прямая ссылка)
+# Old method (direct link)
 sudo go run . vless://uuid@server.com:443
 
-# Новый способ (raw список)
+# New method (raw list)
 sudo go run . --from-raw https://example.com/links.txt
 ```
 
-Для сборки:
+To build:
+
 ```bash
 go build -o goxray_cli .
 ```
