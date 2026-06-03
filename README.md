@@ -21,7 +21,7 @@ Please visit https://xtls.github.io/en for more info.
 
 #### System Requirements
 
-See [SYSTEM_REQUIREMENTS.md](SYSTEM_REQUIREMENTS.md) for detailed hardware, network interface, and OS requirements.
+See [docs/getting-started/SYSTEM_REQUIREMENTS.md](docs/getting-started/SYSTEM_REQUIREMENTS.md) for detailed hardware, network interface, and OS requirements.
 
 #### Tested and supported on:
 
@@ -36,8 +36,12 @@ See [SYSTEM_REQUIREMENTS.md](SYSTEM_REQUIREMENTS.md) for detailed hardware, netw
 - Supports all [Xray-core](https://github.com/XTLS/Xray-core) protocols (vless, vmess e.t.c.) using link notation (`vless://` e.t.c.)
 - Only soft routing rules are applied, no changes made to default routes
 - **IPv6 support** - Full dual-stack IPv4/IPv6 tunneling (enable with `--ipv6` flag)
-- **JSON logging** - Structured logging with automatic rotation (see [JSON Logging Guide](JSON_LOGGING_GUIDE.md))
-- **E2E health check** - Real traffic verification through SOCKS5 tunnel to detect silent connection drops (enable with `--e2e-check-url "http://ipinfo.io/ip"`)
+- **Kill Switch** - Prevents IP leaks when VPN disconnects (see [Kill Switch Guide](docs/features/KILLSWITCH.md))
+- **Split Tunneling** - Selective routing with exclude/include modes (see [Split Tunneling Guide](docs/features/SPLIT_TUNNELING.md))
+- **SOCKS5 Proxy** - Built-in SOCKS5 server for application-level routing (see [SOCKS5 Guide](docs/features/SOCKS5_PROXY.md))
+- **JSON logging** - Structured logging with automatic rotation
+- **E2E health check** - Real traffic verification through SOCKS5 tunnel to detect silent connection drops
+- **Prometheus metrics** - Built-in metrics endpoint for monitoring
 
 ## ⚡️ Installation
 
@@ -101,7 +105,7 @@ connection:
 
 The client will try each URL in order. If the first fails, it automatically falls back to the next one.
 
-For detailed documentation, see [Configuration File Support](#configuration-file-support).
+For detailed documentation, see [docs/configuration/CLI_FLAGS.md](docs/configuration/CLI_FLAGS.md) and [config.yaml.example](config.yaml.example).
 
 #### E2E Health Check (Real Traffic Verification)
 
@@ -162,7 +166,7 @@ logging:
   max_backups: 5
 ```
 
-For more details, see [Configuration File Guide](CONFIG_FILE.md).
+For more details, see [docs/getting-started/QUICKSTART.md](docs/getting-started/QUICKSTART.md).
 
 ### As library in your own project:
 
@@ -227,10 +231,36 @@ docker run --platform=linux/amd64 -v=${PWD}:/app --workdir=/app amd64/golang:1.2
 - Adds exception for XRay outbound address (basically your VPN server IP).
 - Tunnel is created to process all incoming IP packets via TCP/IP stack. All outbound traffic is routed through the XRay inbound proxy and all incoming packets are routed back via TUN device.
 
+## 📚 Documentation
+
+- **[Quick Start Guide](docs/getting-started/QUICKSTART.md)** - Get started in 5 minutes
+- **[Full Documentation](docs/README.md)** - Complete documentation index
+- **[Kill Switch](docs/features/KILLSWITCH.md)** - IP leak protection
+- **[Split Tunneling](docs/features/SPLIT_TUNNELING.md)** - Selective routing
+- **[SOCKS5 Proxy](docs/features/SOCKS5_PROXY.md)** - Built-in SOCKS5 server
+- **[Health Monitoring](docs/features/HEALTH_MONITORING.md)** - Connection monitoring
+- **[Deployment Guide](docs/deployment/PRODUCTION.md)** - Production deployment
+- **[Troubleshooting](docs/troubleshooting/KILLSWITCH_ISSUES.md)** - Common issues
+
+## 📦 Latest Release
+
+**v1.7.0** - [Release Notes](RELEASE_v1.7.0.md)
+
+New features:
+
+- ✅ Split Tunneling (Phase 1: Route-Based CIDR)
+- ✅ Built-in SOCKS5 Proxy Server
+- ✅ Kill Switch DNS fix (CRITICAL)
+- ✅ Kill Switch IPv6 support
+
 ## 📝 TODO
 
-- [ ] Add DNS leak protection
+- [х] Add DNS leak protection
+- [х] Add kill switch functionality
+- [х] Add split tunneling
+- [х] Add SOCKS5 proxy server
+- [х] Add Prometheus metrics endpoint
+- [х] Add configuration file support (YAML/TOML)
 - [ ] Add Web Dashboard / TUI interface
-- [ ] Add Prometheus metrics endpoint
-- [ ] Add configuration file support (YAML/TOML)
-- [ ] Add kill switch functionality
+- [ ] Add domain-based routing (Phase 2)
+- [ ] Add per-application routing (Phase 3)

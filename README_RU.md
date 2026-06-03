@@ -21,7 +21,7 @@
 
 #### Системные требования
 
-Подробные требования к аппаратному обеспечению, сетевому интерфейсу и ОС см. в [SYSTEM_REQUIREMENTS_RU.md](SYSTEM_REQUIREMENTS_RU.md).
+Подробные требования к аппаратному обеспечению, сетевому интерфейсу и ОС см. в [docs/getting-started/SYSTEM_REQUIREMENTS.md](docs/getting-started/SYSTEM_REQUIREMENTS.md).
 
 #### Протестировано и поддерживается на:
 
@@ -36,11 +36,15 @@
 - Поддерживает все протоколы [Xray-core](https://github.com/XTLS/Xray-core) (vless, vmess и др.) через ссылки (`vless://` и т.д.)
 - Применяются только мягкие правила маршрутизации — изменения в основные маршруты не вносятся
 - **IPv6 поддержка** — Полный dual-stack IPv4/IPv6 туннель (включение через `--ipv6`)
+- **Kill Switch** — Защита от утечек IP при разрыве VPN (см. [Kill Switch Guide](docs/features/KILLSWITCH.md))
+- **Split Tunneling** — Выборочная маршрутизация с режимами exclude/include (см. [Split Tunneling Guide](docs/features/SPLIT_TUNNELING.md))
+- **SOCKS5 Proxy** — Встроенный SOCKS5 сервер для маршрутизации на уровне приложений (см. [SOCKS5 Guide](docs/features/SOCKS5_PROXY.md))
 - **JSON логирование** — Структурированное логирование с автоматической ротацией
-- **Prometheus метрики** — Мониторинг через эндпоинт `/metrics`
-- **DNS защита** — Предотвращение утечек DNS (включение через `--dns-protection`)
+- **E2E health check** — Проверка реального трафика через SOCKS5 туннель
+- **Prometheus метрики** — Встроенный эндпоинт метрик для мониторинга
+- **DNS защита** — Предотвращение утечек DNS
 - **Health monitoring** — Автоматический мониторинг здоровья подключения и failover
-- **Auto-reconnect** — Автоматическое переподключение с exponential backoff при потере соединения
+- **Auto-reconnect** — Автоматическое переподключение с exponential backoff
 - **Smart server selection** — Выбор сервера по latency + packet loss scoring
 - **Поддержка нескольких URL серверов** — Fallback между источниками списков серверов
 
@@ -202,12 +206,38 @@ docker run --platform=linux/amd64 -v=${PWD}:/app --workdir=/app amd64/golang:1.2
 - Добавляет исключение для исходящего адреса XRay (IP вашего VPN-сервера).
 - Создаётся туннель для обработки всех входящих IP-пакетов через TCP/IP стек. Весь исходящий трафик направляется через входящий прокси XRay, а все входящие пакеты возвращаются обратно через TUN-устройство.
 
+## 📚 Документация
+
+- **[Быстрый старт](docs/getting-started/QUICKSTART.md)** - Начните работу за 5 минут
+- **[Полная документация](docs/README.md)** - Полный индекс документации
+- **[Kill Switch](docs/features/KILLSWITCH.md)** - Защита от утечек IP
+- **[Split Tunneling](docs/features/SPLIT_TUNNELING.md)** - Выборочная маршрутизация
+- **[SOCKS5 Proxy](docs/features/SOCKS5_PROXY.md)** - Встроенный SOCKS5 сервер
+- **[Health Monitoring](docs/features/HEALTH_MONITORING.md)** - Мониторинг подключения
+- **[Руководство по развертыванию](docs/deployment/PRODUCTION.md)** - Production окружение
+- **[Troubleshooting](docs/troubleshooting/KILLSWITCH_ISSUES.md)** - Решение проблем
+
+## 📦 Последний релиз
+
+**v1.7.0** - [Release Notes](RELEASE_v1.7.0.md)
+
+Новые функции:
+
+- ✅ Split Tunneling (Phase 1: Route-Based CIDR)
+- ✅ Встроенный SOCKS5 Proxy сервер
+- ✅ Kill Switch DNS fix (КРИТИЧНО)
+- ✅ Kill Switch IPv6 поддержка
+
 ## 📝 TODO
 
 - [x] Добавить защиту от утечек DNS
-- [ ] Добавить веб-панель / TUI интерфейс
+- [x] Добавить kill switch
+- [x] Добавить split tunneling
+- [x] Добавить SOCKS5 proxy сервер
 - [x] Добавить Prometheus метрики
 - [x] Добавить поддержку конфигурационных файлов (YAML)
-- [ ] Добавить kill switch
 - [x] Добавить Health Monitoring & Auto-Failover
 - [x] Добавить Auto-Reconnect с exponential backoff
+- [ ] Добавить веб-панель / TUI интерфейс
+- [ ] Добавить domain-based routing (Phase 2)
+- [ ] Добавить per-application routing (Phase 3)
