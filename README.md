@@ -233,14 +233,26 @@ docker run --platform=linux/amd64 -v=${PWD}:/app --workdir=/app amd64/golang:1.2
 
 ## 📚 Documentation
 
-- **[Quick Start Guide](docs/getting-started/QUICKSTART.md)** - Get started in 5 minutes
-- **[Full Documentation](docs/README.md)** - Complete documentation index
-- **[Kill Switch](docs/features/KILLSWITCH.md)** - IP leak protection
-- **[Split Tunneling](docs/features/SPLIT_TUNNELING.md)** - Selective routing
-- **[SOCKS5 Proxy](docs/features/SOCKS5_PROXY.md)** - Built-in SOCKS5 server
-- **[Health Monitoring](docs/features/HEALTH_MONITORING.md)** - Connection monitoring
-- **[Deployment Guide](docs/deployment/PRODUCTION.md)** - Production deployment
-- **[Troubleshooting](docs/troubleshooting/KILLSWITCH_ISSUES.md)** - Common issues
+> **Choose your language:**
+>
+> - **[🇬🇧 English Documentation](docs/en/README.md)** - Full English docs
+> - **[🇷🇺 Русская документация](docs/ru/README.md)** - Полная русская документация
+
+### Quick Links (English):
+
+- **[Quick Start Guide](docs/en/getting-started/QUICKSTART.md)** - Get started in 5 minutes
+- **[Kill Switch](docs/en/features/KILLSWITCH.md)** - IP leak protection
+- **[Split Tunneling](docs/en/features/SPLIT_TUNNELING.md)** - Selective routing
+- **[SOCKS5 Proxy](docs/en/features/SOCKS5_PROXY.md)** - Built-in SOCKS5 server
+- **[Deployment Guide](docs/en/deployment/PRODUCTION.md)** - Production deployment
+
+### Быстрые ссылки (Русский):
+
+- **[Быстрый старт](docs/ru/getting-started/QUICKSTART.md)** - Начните за 5 минут
+- **[Kill Switch](docs/ru/features/KILLSWITCH.md)** - Защита от утечек IP
+- **[Split Tunneling](docs/ru/features/SPLIT_TUNNELING.md)** - Выборочная маршрутизация
+- **[SOCKS5 Proxy](docs/ru/features/SOCKS5_PROXY.md)** - Встроенный SOCKS5 сервер
+- **[Руководство по развертыванию](docs/ru/deployment/PRODUCTION.md)** - Production окружение
 
 ## 📦 Latest Release
 
