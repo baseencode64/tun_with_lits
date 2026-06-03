@@ -1,86 +1,48 @@
 # 📚 GoXRay Documentation
 
-Добро пожаловать в документацию GoXRay - VPN клиента на базе Xray-core с поддержкой TUN устройства.
+Welcome to GoXRay documentation - VPN client based on Xray-core with TUN device support.
+
+> **Выберите язык / Choose language:**
+>
+> - **[🇷🇺 Русский](ru/README.md)** - Русская документация
+> - **[🇬🇧 English](en/README.md)** - English documentation
 
 ---
 
-## 📖 Содержание
+## 📖 Quick Navigation
 
-### 🚀 Начало работы
+### 🇷🇺 Русская документация
 
-- [Быстрый старт](getting-started/QUICKSTART.md) - Установка и первый запуск
-- [Системные требования](getting-started/SYSTEM_REQUIREMENTS.md) - Минимальные требования
-- [Установка на Debian](getting-started/INSTALL_DEBIAN.md) - Пошаговая установка
+- **[Начало работы](ru/getting-started/QUICKSTART.md)** - Быстрый старт за 5 минут
+- **[Kill Switch](ru/features/KILLSWITCH.md)** - Защита от IP утечек
+- **[Split Tunneling](ru/features/SPLIT_TUNNELING.md)** - Выборочная маршрутизация
+- **[SOCKS5 Proxy](ru/features/SOCKS5_PROXY.md)** - Встроенный SOCKS5 сервер
+- **[Troubleshooting](ru/troubleshooting/KILLSWITCH_ISSUES.md)** - Решение проблем
 
-### ⚙️ Конфигурация
+**[📚 Полная русская документация →](ru/README.md)**
 
-- [Основная конфигурация](configuration/CONFIG_REFERENCE.md) - Полное описание config.yaml
-- [CLI флаги](configuration/CLI_FLAGS.md) - Параметры командной строки
-- [Переменные окружения](configuration/ENV_VARS.md) - Environment variables
+### 🇬🇧 English Documentation
 
-### 🔧 Функции
+- **[Getting Started](en/getting-started/QUICKSTART.md)** - Quick start in 5 minutes
+- **[Kill Switch](en/features/KILLSWITCH.md)** - IP leak protection
+- **[Split Tunneling](en/features/SPLIT_TUNNELING.md)** - Selective routing
+- **[SOCKS5 Proxy](en/features/SOCKS5_PROXY.md)** - Built-in SOCKS5 server
+- **[Troubleshooting](en/troubleshooting/KILLSWITCH_ISSUES.md)** - Common issues
 
-- [Kill Switch](features/KILLSWITCH.md) - Защита от IP утечек
-- [Split Tunneling](features/SPLIT_TUNNELING.md) - Выборочная маршрутизация
-- [SOCKS5 Proxy](features/SOCKS5_PROXY.md) - Встроенный SOCKS5 сервер
-- [DNS Protection](features/DNS_PROTECTION.md) - Защита от DNS утечек
-- [Health Monitoring](features/HEALTH_MONITORING.md) - Мониторинг соединения
-- [Metrics](features/METRICS.md) - Prometheus метрики
-
-### 🐳 Развертывание
-
-- [Docker Deployment](deployment/DOCKER.md) - Запуск в Docker
-- [Systemd Service](deployment/SYSTEMD.md) - Настройка systemd сервиса
-- [Production Deployment](deployment/PRODUCTION.md) - Production окружение
-
-### 🔍 Troubleshooting
-
-- [FAQ](troubleshooting/FAQ.md) - Часто задаваемые вопросы
-- [Common Issues](troubleshooting/COMMON_ISSUES.md) - Типичные проблемы
-- [Debugging](troubleshooting/DEBUGGING.md) - Отладка
-
-### 📦 Releases
-
-- [v1.7.0](../RELEASE_v1.7.0.md) - Текущая версия (Split Tunneling, SOCKS5, Kill Switch fixes)
-- [Changelog](../CHANGELOG.md) - История изменений
-- [Migration Guide](guides/MIGRATION.md) - Миграция между версиями
-
-### 🏗️ Разработка
-
-- [Project Structure](development/PROJECT_STRUCTURE.md) - Структура проекта
-- [Contributing](development/CONTRIBUTING.md) - Как внести вклад
-- [Architecture](development/ARCHITECTURE.md) - Архитектура системы
+**[📚 Full English documentation →](en/README.md)**
 
 ---
 
-## 🎯 Быстрые ссылки
+## 📦 Latest Release
 
-### Для пользователей
+**v1.7.0** - [Release Notes](../RELEASE_v1.7.0.md)
 
-- **Первый запуск**: [Quickstart Guide](getting-started/QUICKSTART.md)
-- **Настройка Kill Switch**: [Kill Switch Guide](features/KILLSWITCH.md)
-- **Настройка Split Tunneling**: [Split Tunneling Guide](features/SPLIT_TUNNELING.md)
-- **Проблемы**: [Troubleshooting](troubleshooting/COMMON_ISSUES.md)
+New features:
 
-### Для администраторов
-
-- **Production Deployment**: [Production Guide](deployment/PRODUCTION.md)
-- **Docker Setup**: [Docker Guide](deployment/DOCKER.md)
-- **Monitoring**: [Health Monitoring](features/HEALTH_MONITORING.md)
-- **Metrics**: [Prometheus Metrics](features/METRICS.md)
-
-### Для разработчиков
-
-- **Architecture**: [System Architecture](development/ARCHITECTURE.md)
-- **Code Structure**: [Project Structure](development/PROJECT_STRUCTURE.md)
-- **Contributing**: [Contribution Guide](development/CONTRIBUTING.md)
-
----
-
-## 📋 Версии документации
-
-- **Русский**: Основная документация на русском языке
-- **English**: [English documentation](../README.md)
+- ✅ Split Tunneling (Phase 1: Route-Based CIDR)
+- ✅ Built-in SOCKS5 Proxy Server
+- ✅ Kill Switch DNS fix (CRITICAL)
+- ✅ Kill Switch IPv6 support
 
 ---
 
