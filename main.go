@@ -395,6 +395,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	
+	// Pass AppConfig to Client for SOCKS5 support
+	if appConfig != nil {
+		vpn.SetAppConfig(appConfig)
+	}
 
 	slog.Info("VPN client initialized", "metrics_port", metricsPort)
 	

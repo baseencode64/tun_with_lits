@@ -23,6 +23,20 @@ connection:
   # Allow insecure TLS certificates (default: false)
   tls_allow_insecure: false
   
+  # Enable DNS leak protection (default: false)
+  # Routes all DNS traffic through VPN to prevent DNS leaks
+  enable_dns_protection: false
+  
+  # Enable kill switch (default: false)
+  # Blocks all outbound traffic if VPN disconnects unexpectedly
+  # Prevents IP leaks during connection drops using iptables rules
+  # IMPORTANT: Requires root/sudo privileges to modify iptables
+  enable_kill_switch: false
+  
+  # Prometheus metrics endpoint port (0 = disabled, default: 0)
+  # Exposes metrics at http://0.0.0.0:<port>/metrics
+  metrics_port: 0
+  
   # E2E health check URL - real traffic verification through VPN tunnel
   # Health checker will perform a real HTTP GET request through SOCKS5 to verify
   # that data actually flows through the tunnel (not just SOCKS proxy being alive).
@@ -92,3 +106,73 @@ health_monitoring:
   
   # Max retries before failover (default: 3)
   max_retries: 3
+
+# Split tunneling settings (selective routing)
+# Allows you to route some traffic through VPN and some directly through ISP
+split_tunneling:
+  # Enable split tunneling (default: false)
+  enabled: false
+  
+  # Mode: "exclude" or "include"
+  # - "exclude": All traffic through VPN EXCEPT excluded CIDRs (goes direct)
+  # - "include": Only included CIDRs through VPN, rest goes direct
+  # - "disabled": All traffic through VPN (same as enabled: false)
+  mode: "exclude"
+  
+  # Excluded CIDRs (used in "exclude" mode)
+  # These IP ranges will bypass VPN and go direct through ISP
+  exclude_cidrs:
+    # Private networks (RFC 1918) - local network access
+    - "192.168.0.0/16"    # Local home/office network
+    - "10.0.0.0/8"        # Corporate network
+    - "172.16.0.0/12"     # Docker networks
+    
+    # Link-local addresses
+    - "169.254.0.0/16"    # APIPA (for mDNS, Bonjour)
+    
+    # Multicast
+    - "224.0.0.0/4"       # Multicast (for DLNA, Chromecast)
+    
+    # Optional: Specific services for better performance
+    # Uncomment if you want these services to bypass VPN
+    # - "185.60.216.0/22"   # Netflix CDN
+    # - "172.217.0.0/16"    # Google services (YouTube)
+    # - "151.101.0.0/16"    # Twitch CDN
+  
+  # Included CIDRs (used in "include" mode)
+  # Only these IP ranges will go through VPN, rest goes direct
+  include_cidrs: []
+    # Example for include mode (uncomment to use):
+    # - "93.184.216.34/32"  # Specific server
+    # - "142.250.0.0/15"    # Google IP range
+  
+  # Future: Domain-based routing (Phase 2 - not yet implemented)
+  # exclude_domains: []
+  #   - "*.local"
+  #   - "*.lan"
+  #   - "netflix.com"
+  # 
+  # include_domains: []
+  #   - "*.onion"
+  #   - "blocked-site.com"
+
+# SOCKS5 proxy server (optional)
+# Allows Windows applications to route traffic through VPN via SOCKS5 proxy
+# Useful for applications that don't support TUN/TAP or need explicit proxy configuration
+socks5:
+  # Enable SOCKS5 proxy server (default: false)
+  enabled: false
+  
+  # Listen address (default: "0.0.0.0:1080")
+  # Use "0.0.0.0:1080" to listen on all interfaces
+  # Use "127.0.0.1:1080" to listen only on localhost
+  listen_addr: "0.0.0.0:1080"
+  
+  # Authentication (optional, leave empty for no auth)
+  # If both username and password are set, SOCKS5 will require authentication
+  username: ""
+  password: ""
+  
+  # Connection timeout (default: "30s")
+  # Maximum time to wait for connection establishment
+  timeout: "30s"

@@ -19,6 +19,7 @@ import (
 	"github.com/goxray/core/network/route"
 	"github.com/goxray/core/network/tun"
 	"github.com/goxray/core/pipe2socks"
+	"github.com/goxray/tun/pkg/socks5"
 	"github.com/jackpal/gateway"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -206,6 +207,21 @@ var (
 			Help: "End-to-end connectivity check enabled (1 = enabled, 0 = disabled)",
 		},
 	)
+
+	goxrayConfigSplitTunnelEnabled = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "goxray_config_split_tunnel_enabled",
+			Help: "Split tunneling enabled in configuration (1 = enabled, 0 = disabled)",
+		},
+	)
+
+	goxrayConfigSplitTunnelMode = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "goxray_config_split_tunnel_mode",
+			Help: "Split tunneling mode (label: mode = exclude/include/disabled)",
+		},
+		[]string{"mode"},
+	)
 )
 
 func init() {
@@ -227,6 +243,8 @@ func init() {
 	prometheus.MustRegister(goxrayConfigMetricsEnabled)
 	prometheus.MustRegister(goxrayConfigTLSInsecureAllowed)
 	prometheus.MustRegister(goxrayConfigE2ECheckEnabled)
+	prometheus.MustRegister(goxrayConfigSplitTunnelEnabled)
+	prometheus.MustRegister(goxrayConfigSplitTunnelMode)
 }
 
 var (
@@ -346,6 +364,13 @@ type Client struct {
 	// Kill switch state (thread-safe)
 	killSwitchActive bool        // Tracks if kill switch is currently active
 	killSwitchMutex  sync.RWMutex // Protects killSwitchActive access
+
+	// Split tunneling support
+	splitTunnelRouter *SplitTunnelRouter
+	
+	// SOCKS5 proxy server (optional)
+	socks5Server *socks5.Server
+	appConfig    *AppConfig // Store app config for SOCKS5 settings
 }
 
 // Proxy will set up XRay inbound.
@@ -405,6 +430,11 @@ func NewClientWithOpts(cfg Config) (*Client, error) {
 	}
 
 	return client, nil
+}
+
+// SetAppConfig sets the application configuration (needed for SOCKS5)
+func (c *Client) SetAppConfig(appConfig *AppConfig) {
+	c.appConfig = appConfig
 }
 
 // GatewayIP returns gateway IP used to route outbound traffic through.
@@ -591,6 +621,14 @@ func (c *Client) Connect(link string) error {
 		// Log but don't fail connection - traffic should work through VPN anyway
 	}
 
+	// Start SOCKS5 proxy server if configured
+	if c.appConfig != nil && c.appConfig.SOCKS5.Enabled {
+		if err := c.startSOCKS5(c.appConfig.SOCKS5); err != nil {
+			c.cfg.Logger.Warn("Failed to start SOCKS5 server", "error", err)
+			// Non-fatal error - VPN works, SOCKS5 doesn't
+		}
+	}
+
 	return nil
 }
 
@@ -599,6 +637,15 @@ func (c *Client) Connect(link string) error {
 // It will block till all resources are done processing or
 // context is cancelled (method also enforces timeout of disconnectTimeout)
 func (c *Client) Disconnect(ctx context.Context) error {
+	// Stop SOCKS5 server first if running
+	if c.socks5Server != nil {
+		c.cfg.Logger.Info("Stopping SOCKS5 server")
+		if err := c.socks5Server.Stop(); err != nil {
+			c.cfg.Logger.Warn("Error stopping SOCKS5 server", "error", err)
+		}
+		c.socks5Server = nil
+	}
+	
 	// Activate kill switch FIRST to prevent IP leaks during disconnection
 	if err := c.activateKillSwitch(); err != nil {
 		c.cfg.Logger.Warn("Failed to activate kill switch on disconnect", "error", err)
@@ -1435,15 +1482,23 @@ func (c *Client) activateKillSwitch() error {
 		// Don't return error - partial protection is better than nothing
 	}
 	
-	// Setup IPv6 kill switch rules if enabled
+	// Setup IPv6 kill switch rules if enabled in configuration
+	// This prevents IPv6 traffic leaks when IPv6 VPN is active
 	if c.cfg.EnableIPv6 {
+		c.cfg.Logger.Info("IPv6 enabled in config - setting up IPv6 kill switch")
 		if err := c.setupKillSwitchRules(true); err != nil {
 			c.cfg.Logger.Warn("Failed to setup IPv6 kill switch rules", "error", err)
 		}
+	} else {
+		c.cfg.Logger.Debug("IPv6 not enabled in config - skipping IPv6 kill switch setup")
 	}
 	
 	c.killSwitchActive = true
-	c.cfg.Logger.Info("Kill switch activated - output traffic blocked")
+	ipv6Status := "IPv4 only"
+	if c.cfg.EnableIPv6 {
+		ipv6Status = "IPv4 and IPv6"
+	}
+	c.cfg.Logger.Info("Kill switch activated", "protection", ipv6Status)
 	return nil
 }
 
@@ -1533,6 +1588,63 @@ func (c *Client) setupKillSwitchRules(useIPv6 bool) error {
 			c.cfg.Logger.Debug("Kill switch XRay server exception added", "xray_ip", xrayIP, "cmd", cmdName)
 		}
 	}
+	
+	// Allow DNS traffic (CRITICAL for reconnection)
+	// Without DNS, the client cannot resolve server list URLs during reconnection
+	// This fixes the "operation not permitted" error after long-running sessions
+	c.cfg.Logger.Debug("Adding DNS exceptions to kill switch", "cmd", cmdName)
+	
+	// Allow DNS to gateway (usually local DNS server like 192.168.x.1)
+	if c.cfg.GatewayIP != nil {
+		gatewayIP := c.cfg.GatewayIP.String()
+		
+		// Allow UDP DNS (port 53) to gateway
+		allowDNSUDPCmd := exec.Command(cmdName, "-A", chainName, 
+			"-p", "udp", "--dport", "53", 
+			"-d", gatewayIP, 
+			"-j", "ACCEPT")
+		if err := allowDNSUDPCmd.Run(); err != nil {
+			c.cfg.Logger.Warn("Failed to allow DNS UDP to gateway in kill switch", 
+				"gateway", gatewayIP, "error", err)
+		} else {
+			c.cfg.Logger.Debug("Kill switch DNS UDP exception added", 
+				"gateway", gatewayIP, "cmd", cmdName)
+		}
+		
+		// Allow TCP DNS (port 53) to gateway (for large responses)
+		allowDNSTCPCmd := exec.Command(cmdName, "-A", chainName, 
+			"-p", "tcp", "--dport", "53", 
+			"-d", gatewayIP, 
+			"-j", "ACCEPT")
+		if err := allowDNSTCPCmd.Run(); err != nil {
+			c.cfg.Logger.Debug("Failed to allow DNS TCP to gateway in kill switch", 
+				"gateway", gatewayIP, "error", err)
+		} else {
+			c.cfg.Logger.Debug("Kill switch DNS TCP exception added", 
+				"gateway", gatewayIP, "cmd", cmdName)
+		}
+	}
+	
+	// Allow DNS to common public DNS servers (fallback)
+	// This ensures reconnection works even if gateway DNS is unavailable
+	publicDNS := []string{"8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1"}
+	for _, dnsIP := range publicDNS {
+		allowPublicDNSCmd := exec.Command(cmdName, "-A", chainName, 
+			"-p", "udp", "--dport", "53", 
+			"-d", dnsIP, 
+			"-j", "ACCEPT")
+		if err := allowPublicDNSCmd.Run(); err != nil {
+			c.cfg.Logger.Debug("Failed to allow public DNS in kill switch", 
+				"dns", dnsIP, "error", err)
+		} else {
+			c.cfg.Logger.Debug("Kill switch public DNS exception added", 
+				"dns", dnsIP, "cmd", cmdName)
+		}
+	}
+	
+	c.cfg.Logger.Info("Kill switch DNS exceptions configured", 
+		"gateway_dns", c.cfg.GatewayIP != nil, 
+		"public_dns_count", len(publicDNS))
 	
 	// Block all other traffic (default DROP)
 	blockCmd := exec.Command(cmdName, "-A", chainName, "-j", "DROP")
@@ -1647,4 +1759,43 @@ func (c *Client) readInterfaceStats(ifaceName string) (int64, int64) {
 	}
 	
 	return 0, 0
+}
+
+// startSOCKS5 starts the SOCKS5 proxy server
+func (c *Client) startSOCKS5(config SOCKS5Config) error {
+	if !config.Enabled {
+		return nil
+	}
+	
+	c.cfg.Logger.Info("Starting SOCKS5 proxy server", "address", config.ListenAddr)
+	
+	timeout, err := config.GetTimeout()
+	if err != nil {
+		return fmt.Errorf("invalid SOCKS5 timeout: %w", err)
+	}
+	
+	s5Config := socks5.Config{
+		ListenAddr: config.ListenAddr,
+		Username:   config.Username,
+		Password:   config.Password,
+		Timeout:    timeout,
+		Logger:     c.cfg.Logger,
+	}
+	
+	c.socks5Server = socks5.NewServer(s5Config)
+	if err := c.socks5Server.Start(); err != nil {
+		return fmt.Errorf("start SOCKS5 server: %w", err)
+	}
+	
+	authInfo := "no authentication"
+	if config.Username != "" {
+		authInfo = fmt.Sprintf("username/password authentication (user: %s)", config.Username)
+	}
+	
+	c.cfg.Logger.Info("SOCKS5 proxy server started successfully", 
+		"address", config.ListenAddr,
+		"auth", authInfo,
+		"timeout", timeout)
+	
+	return nil
 }

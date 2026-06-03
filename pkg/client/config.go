@@ -24,6 +24,73 @@ type AppConfig struct {
 	
 	// Health monitoring settings
 	HealthMonitoring HealthMonitoringConfig `yaml:"health_monitoring"`
+	
+	// Split tunneling settings
+	SplitTunnel SplitTunnelConfig `yaml:"split_tunneling"`
+	
+	// SOCKS5 proxy server settings (optional)
+	SOCKS5 SOCKS5Config `yaml:"socks5"`
+}
+
+// SOCKS5Config holds SOCKS5 proxy server configuration
+type SOCKS5Config struct {
+	// Enable SOCKS5 proxy server
+	Enabled bool `yaml:"enabled"`
+	
+	// Listen address (e.g., "0.0.0.0:1080")
+	ListenAddr string `yaml:"listen_addr"`
+	
+	// Username for authentication (optional, empty = no auth)
+	Username string `yaml:"username,omitempty"`
+	
+	// Password for authentication (optional, empty = no auth)
+	Password string `yaml:"password,omitempty"`
+	
+	// Connection timeout (e.g., "30s", "1m")
+	Timeout string `yaml:"timeout,omitempty"`
+}
+
+// SetDefaults sets default values for SOCKS5 config
+func (c *SOCKS5Config) SetDefaults() {
+	if c.ListenAddr == "" {
+		c.ListenAddr = "0.0.0.0:1080"
+	}
+	if c.Timeout == "" {
+		c.Timeout = "30s"
+	}
+}
+
+// GetTimeout parses and returns timeout duration
+func (c *SOCKS5Config) GetTimeout() (time.Duration, error) {
+	if c.Timeout == "" {
+		return 30 * time.Second, nil
+	}
+	return time.ParseDuration(c.Timeout)
+}
+
+// Validate validates SOCKS5 configuration
+func (c *SOCKS5Config) Validate() error {
+	if !c.Enabled {
+		return nil // No validation needed if disabled
+	}
+	
+	if c.ListenAddr == "" {
+		return fmt.Errorf("socks5.listen_addr is required when enabled")
+	}
+	
+	// Validate timeout format
+	if c.Timeout != "" {
+		if _, err := time.ParseDuration(c.Timeout); err != nil {
+			return fmt.Errorf("invalid socks5.timeout format: %w", err)
+		}
+	}
+	
+	// Validate authentication (both username and password required if one is set)
+	if (c.Username != "" && c.Password == "") || (c.Username == "" && c.Password != "") {
+		return fmt.Errorf("socks5: both username and password must be set for authentication")
+	}
+	
+	return nil
 }
 
 // ConnectionConfig holds VPN connection related settings
@@ -170,6 +237,12 @@ func (c *AppConfig) setDefaults() {
 	if c.HealthMonitoring.MaxRetries == 0 {
 		c.HealthMonitoring.MaxRetries = 3
 	}
+
+	// Split tunneling defaults
+	c.SplitTunnel.SetDefaults()
+	
+	// SOCKS5 defaults
+	c.SOCKS5.SetDefaults()
 }
 
 // Validate validates the configuration
@@ -259,6 +332,16 @@ func (c *AppConfig) Validate() error {
 	}
 	if c.Reconnection.BackoffFactor <= 1.0 && c.Reconnection.BackoffFactor != 0 {
 		return fmt.Errorf("reconnection.backoff_factor must be > 1.0, got %.1f", c.Reconnection.BackoffFactor)
+	}
+
+	// Validate split tunneling settings
+	if err := c.SplitTunnel.Validate(); err != nil {
+		return fmt.Errorf("split_tunneling: %w", err)
+	}
+	
+	// Validate SOCKS5 settings
+	if err := c.SOCKS5.Validate(); err != nil {
+		return fmt.Errorf("socks5: %w", err)
 	}
 
 	return nil
