@@ -1,75 +1,75 @@
 # 📚 GoXRay Documentation
 
-Добро пожаловать в документацию GoXRay - VPN клиента на базе Xray-core с поддержкой TUN устройства.
+Welcome to GoXRay documentation - VPN client based on Xray-core with TUN device support.
 
 ---
 
-## 📖 Содержание
+## 📖 Table of Contents
 
-### 🚀 Начало работы
+### 🚀 Getting Started
 
-- [Быстрый старт](getting-started/QUICKSTART.md) - Установка и первый запуск
-- [Системные требования](getting-started/SYSTEM_REQUIREMENTS.md) - Минимальные требования
-- [Установка на Debian](getting-started/INSTALL_DEBIAN.md) - Пошаговая установка
+- [Quick Start](getting-started/QUICKSTART.md) - Installation and first launch
+- [System Requirements](getting-started/SYSTEM_REQUIREMENTS.md) - Minimum requirements
+- [Debian Installation](getting-started/INSTALL_DEBIAN.md) - Step-by-step installation
 
-### ⚙️ Конфигурация
+### ⚙️ Configuration
 
-- [Основная конфигурация](configuration/CONFIG_REFERENCE.md) - Полное описание config.yaml
-- [CLI флаги](configuration/CLI_FLAGS.md) - Параметры командной строки
-- [Переменные окружения](configuration/ENV_VARS.md) - Environment variables
+- [Main Configuration](configuration/CONFIG_REFERENCE.md) - Complete config.yaml description
+- [CLI Flags](configuration/CLI_FLAGS.md) - Command line parameters
+- [Environment Variables](configuration/ENV_VARS.md) - Environment variables
 
-### 🔧 Функции
+### 🔧 Features
 
-- [Kill Switch](features/KILLSWITCH.md) - Защита от IP утечек
-- [Split Tunneling](features/SPLIT_TUNNELING.md) - Выборочная маршрутизация
-- [SOCKS5 Proxy](features/SOCKS5_PROXY.md) - Встроенный SOCKS5 сервер
-- [DNS Protection](features/DNS_PROTECTION.md) - Защита от DNS утечек
-- [Health Monitoring](features/HEALTH_MONITORING.md) - Мониторинг соединения
-- [Metrics](features/METRICS.md) - Prometheus метрики
+- [Kill Switch](features/KILLSWITCH.md) - IP leak protection
+- [Split Tunneling](features/SPLIT_TUNNELING.md) - Selective routing
+- [SOCKS5 Proxy](features/SOCKS5_PROXY.md) - Built-in SOCKS5 server
+- [DNS Protection](features/DNS_PROTECTION.md) - DNS leak protection
+- [Health Monitoring](features/HEALTH_MONITORING.md) - Connection monitoring
+- [Metrics](features/METRICS.md) - Prometheus metrics
 
-### 🐳 Развертывание
+### 🐳 Deployment
 
-- [Docker Deployment](deployment/DOCKER.md) - Запуск в Docker
-- [Systemd Service](deployment/SYSTEMD.md) - Настройка systemd сервиса
-- [Production Deployment](deployment/PRODUCTION.md) - Production окружение
+- [Docker Deployment](deployment/DOCKER.md) - Running in Docker
+- [Systemd Service](deployment/SYSTEMD.md) - Systemd service setup
+- [Production Deployment](deployment/PRODUCTION.md) - Production environment
 
 ### 🔍 Troubleshooting
 
-- [FAQ](troubleshooting/FAQ.md) - Часто задаваемые вопросы
-- [Common Issues](troubleshooting/COMMON_ISSUES.md) - Типичные проблемы
-- [Debugging](troubleshooting/DEBUGGING.md) - Отладка
+- [FAQ](troubleshooting/FAQ.md) - Frequently asked questions
+- [Common Issues](troubleshooting/COMMON_ISSUES.md) - Common problems
+- [Debugging](troubleshooting/DEBUGGING.md) - Debugging
 
 ### 📦 Releases
 
-- [v1.7.0](../RELEASE_v1.7.0.md) - Текущая версия (Split Tunneling, SOCKS5, Kill Switch fixes)
-- [Changelog](../CHANGELOG.md) - История изменений
-- [Migration Guide](guides/MIGRATION.md) - Миграция между версиями
+- [v1.7.0](../RELEASE_v1.7.0.md) - Current version (Split Tunneling, SOCKS5, Kill Switch fixes)
+- [Changelog](../CHANGELOG.md) - Change history
+- [Migration Guide](guides/MIGRATION.md) - Migration between versions
 
-### 🏗️ Разработка
+### 🏗️ Development
 
-- [Project Structure](development/PROJECT_STRUCTURE.md) - Структура проекта
-- [Contributing](development/CONTRIBUTING.md) - Как внести вклад
-- [Architecture](development/ARCHITECTURE.md) - Архитектура системы
+- [Project Structure](development/PROJECT_STRUCTURE.md) - Project structure
+- [Contributing](development/CONTRIBUTING.md) - How to contribute
+- [Architecture](development/ARCHITECTURE.md) - System architecture
 
 ---
 
-## 🎯 Быстрые ссылки
+## 🎯 Quick Links
 
-### Для пользователей
+### For Users
 
-- **Первый запуск**: [Quickstart Guide](getting-started/QUICKSTART.md)
-- **Настройка Kill Switch**: [Kill Switch Guide](features/KILLSWITCH.md)
-- **Настройка Split Tunneling**: [Split Tunneling Guide](features/SPLIT_TUNNELING.md)
-- **Проблемы**: [Troubleshooting](troubleshooting/COMMON_ISSUES.md)
+- **First Launch**: [Quickstart Guide](getting-started/QUICKSTART.md)
+- **Kill Switch Setup**: [Kill Switch Guide](features/KILLSWITCH.md)
+- **Split Tunneling Setup**: [Split Tunneling Guide](features/SPLIT_TUNNELING.md)
+- **Issues**: [Troubleshooting](troubleshooting/COMMON_ISSUES.md)
 
-### Для администраторов
+### For Administrators
 
 - **Production Deployment**: [Production Guide](deployment/PRODUCTION.md)
 - **Docker Setup**: [Docker Guide](deployment/DOCKER.md)
 - **Monitoring**: [Health Monitoring](features/HEALTH_MONITORING.md)
 - **Metrics**: [Prometheus Metrics](features/METRICS.md)
 
-### Для разработчиков
+### For Developers
 
 - **Architecture**: [System Architecture](development/ARCHITECTURE.md)
 - **Code Structure**: [Project Structure](development/PROJECT_STRUCTURE.md)
@@ -77,19 +77,19 @@
 
 ---
 
-## 📋 Версии документации
+## 📋 Documentation Versions
 
-- **Русский**: Основная документация на русском языке
-- **English**: [English documentation](../README.md)
+- **English**: Main documentation in English
+- **Русский**: [Russian documentation](../ru/README.md)
 
 ---
 
-## 🆘 Поддержка
+## 🆘 Support
 
 - **Issues**: [GitHub Issues](https://github.com/baseencode64/tun_with_lits/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/baseencode64/tun_with_lits/discussions)
 
 ---
 
-**Версия документации**: v1.7.0  
-**Последнее обновление**: 2026-06-03
+**Documentation Version**: v1.7.0  
+**Last Updated**: 2026-06-03

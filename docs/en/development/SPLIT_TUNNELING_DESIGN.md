@@ -28,21 +28,21 @@
 
 Split Tunneling позволяет выборочно маршрутизировать трафик:
 
-- **Часть трафика** → через VPN туннель (защищено)
-- **Часть трафика** → напрямую через ISP (быстрее)
+- **Часть трафика** → through VPN туннель (защищено)
+- **Часть трафика** → directly через ISP (быстрее)
 
 ### Goals
 
-1. ✅ **Производительность**: Локальный трафик без VPN overhead
-2. ✅ **Гибкость**: Пользователь контролирует что идет через VPN
+1. ✅ **Performance**: Local трафик without VPN overhead
+2. ✅ **Гибкость**: Пользователь контролирует что идет through VPN
 3. ✅ **Bandwidth**: Экономия ресурсов VPN сервера
-4. ✅ **Совместимость**: Работа с Kill Switch, DNS Protection, IPv6
+4. ✅ **Совместимость**: Работа with Kill Switch, DNS Protection, IPv6
 
 ### Non-Goals (Phase 1)
 
 - ❌ Per-application routing (требует cgroups)
 - ❌ Domain-based routing (требует DNS interception)
-- ❌ Dynamic route updates (будет в Phase 2)
+- ❌ Dynamic route updates (будет in Phase 2)
 
 ---
 
@@ -50,38 +50,38 @@ Split Tunneling позволяет выборочно маршрутизиров
 
 ### Use Case 1: Corporate Network Access
 
-**Проблема**:
+**Issue**:
 
 ```
-Пользователь работает из дома, подключен к VPN для доступа к заблокированным сайтам.
-НО: Локальный принтер (192.168.1.100) и NAS (192.168.1.50) недоступны через VPN.
+Пользователь работает from дома, подключен to VPN for доступа to заблокированным сайтам.
+НО: Local принтер (192.168.1.100) and NAS (192.168.1.50) недоступны through VPN.
 ```
 
-**Решение**:
+**Solution**:
 
 ```yaml
 split_tunneling:
   enabled: true
   mode: "exclude"
   exclude_cidrs:
-    - "192.168.0.0/16" # Локальная сеть напрямую
-    - "10.0.0.0/8" # Корпоративная сеть напрямую
+    - "192.168.0.0/16" # Local network directly
+    - "10.0.0.0/8" # Corporate network directly
 ```
 
-**Результат**: Принтер и NAS доступны напрямую, остальное через VPN ✅
+**Result**: Принтер and NAS доступны directly, остальное through VPN ✅
 
 ---
 
 ### Use Case 2: Streaming Performance
 
-**Проблема**:
+**Issue**:
 
 ```
-Netflix/YouTube через VPN медленные (VPN сервер далеко).
-Но нужен VPN для доступа к заблокированным ресурсам.
+Netflix/YouTube through VPN медленные (VPN server далеко).
+Но нужен VPN for доступа to заблокированным ресурсам.
 ```
 
-**Решение**:
+**Solution**:
 
 ```yaml
 split_tunneling:
@@ -92,31 +92,31 @@ split_tunneling:
     - "172.217.0.0/16" # Google (YouTube)
 ```
 
-**Результат**: Streaming на полной скорости, остальное через VPN ✅
+**Result**: Streaming on полной скорости, остальное through VPN ✅
 
 ---
 
 ### Use Case 3: Selective Privacy
 
-**Проблема**:
+**Issue**:
 
 ```
-Нужна приватность только для конкретных сайтов (банкинг, email).
-Остальной трафик может идти напрямую (экономия bandwidth).
+Нужна приватность only for конкретных сайтов (банкинг, email).
+Остальной трафик can идти directly (экономия bandwidth).
 ```
 
-**Решение**:
+**Solution**:
 
 ```yaml
 split_tunneling:
   enabled: true
-  mode: "include" # Только указанные через VPN
+  mode: "include" # Только указанные through VPN
   include_cidrs:
     - "93.184.216.34/32" # example-bank.com
     - "142.250.0.0/15" # Gmail servers
 ```
 
-**Результат**: Только критичный трафик через VPN, остальное напрямую ✅
+**Result**: Только критичный трафик through VPN, остальное directly ✅
 
 ---
 

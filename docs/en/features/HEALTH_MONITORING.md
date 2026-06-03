@@ -1,23 +1,23 @@
 # 🏥 Health Monitoring & Automatic Failover
 
-## Обзор
+## Overview
 
-Реализована система **непрерывного мониторинга здоровья** VPN подключения с **автоматическим переключением** на следующий сервер при обнаружении проблем.
+Реализована система **непрерывного мониторинга здоровья** VPN подключения with **автоматическим переключением** on следующий сервер when обнаружении проблем.
 
 ---
 
-## 🎯 Проблема и Решение
+## 🎯 Issue and Solution
 
-### Проблема
+### Issue
 
-Ранее клиент проверял доступность сервера только **один раз** при подключении. Если после подключения сервер становился недоступным (трафик перестал проходить), пользователь оставался без VPN до момента ручного вмешательства.
+Ранее клиент проверял доступность сервера only **один раз** when подключении. Если после подключения сервер становился недоступным (трафик перестал проходить), пользователь оставался without VPN до момента ручного вмешательства.
 
-### Решение
+### Solution
 
 Добавлена система **Health Check**, которая:
 
-- ✅ **Непрерывно мониторит** подключение к VPN серверу
-- ✅ **Автоматически переключает** на следующий лучший сервер при проблемах
+- ✅ **Непрерывно мониторит** подключение to VPN серверу
+- ✅ **Автоматически переключает** on следующий лучший сервер when проблемах
 - ✅ **Периодически проверяет** доступность через TCP connection check
 - ✅ **Считывает consecutive failures** перед триггером failover
 - ✅ **Логирует статус** здоровья каждые 30 секунд
@@ -33,9 +33,9 @@
 ```go
 type HealthChecker struct {
     logger        *slog.Logger
-    checkInterval time.Duration  // Интервал проверок (по умолчанию 10s)
-    timeout       time.Duration  // Таймаут каждой проверки (по умолчанию 5s)
-    maxRetries    int            // Макс. попыток перед failover (по умолчанию 3)
+    checkInterval time.Duration  // Интервал проверок (by умолчанию 10s)
+    timeout       time.Duration  // Таймаут каждой проверки (by умолчанию 5s)
+    maxRetries    int            // Макс. попыток перед failover (by умолчанию 3)
 
     mu          sync.RWMutex
     isHealthy   bool
@@ -53,7 +53,7 @@ type HealthChecker struct {
 
 ### 2. Обновленный `vpn_connector.go`
 
-Интеграция HealthChecker с автоматическим failover:
+Integration HealthChecker with автоматическим failover:
 
 ```go
 type VPNConnector struct {
@@ -72,7 +72,7 @@ type VPNConnector struct {
 **Новые методы:**
 
 - **startHealthMonitoring(server)** - начинает мониторинг текущего сервера
-- **performFailover()** - автоматически переключает на следующий сервер
+- **performFailover()** - автоматически переключает on следующий сервер
 - **GetHealthStatus()** - возвращает полный статус здоровья
 - **Stop()** - корректная остановка всех процессов
 
@@ -83,25 +83,25 @@ type VPNConnector struct {
 ### Процесс Health Checking
 
 ```
-Подключение к серверу
+Connection to серверу
          ↓
 Запуск Health Checker
          ↓
 Каждые 10 секунд:
-    ├─ TCP подключение к серверу
-    ├─ Проверка ответа
+    ├─ TCP подключение to серверу
+    ├─ Verification ответа
     ├─ Успех → сброс счетчика ошибок
-    └─ Ошибка → увеличение consecutive_failures
+    └─ Error → увеличение consecutive_failures
          ↓
 Если consecutive_failures >= 3:
     ├─ Пометить сервер как unhealthy
-    ├─ Запустить performFailover()
+    ├─ Start performFailover()
     ├─ Отключиться от текущего сервера
-    ├─ Подключиться к следующему по списку
-    └─ Перезапустить Health Checker
+    ├─ Подключиться to следующему by списку
+    └─ Restart Health Checker
 ```
 
-### Пример лого
+### Example лого
 
 ```
 INFO Starting health checks host=server1.com port=443 interval=10s timeout=5s max_retries=3
@@ -120,12 +120,12 @@ INFO Starting health checks host=server2.com port=443 interval=10s timeout=5s ma
 
 ---
 
-## ⚙️ Конфигурация
+## ⚙️ Configuration
 
 ### Настройки Health Checker
 
 ```go
-// Создание с настройками по умолчанию
+// Создание with настройками by умолчанию
 healthChecker := NewHealthChecker(
     logger,
     10*time.Second,  // интервал проверок
@@ -136,7 +136,7 @@ healthChecker := NewHealthChecker(
 
 ### Параметры
 
-| Параметр        | По умолчанию | Описание                           |
+| Параметр        | По умолчанию | Description                           |
 | --------------- | ------------ | ---------------------------------- |
 | `checkInterval` | 10s          | Как часто проверять сервер         |
 | `timeout`       | 5s           | Максимальное время ожидания ответа |
@@ -146,9 +146,9 @@ healthChecker := NewHealthChecker(
 
 ---
 
-## 🚀 Использование
+## 🚀 Usage
 
-### Автоматический режим (с raw списком)
+### Автоматический режим (with raw списком)
 
 ```bash
 # Health monitoring включен автоматически
@@ -176,18 +176,18 @@ func main() {
     links, _ := selector.FetchRawLinks("https://example.com/links.txt")
     servers, _ := selector.SelectAllByLatency(links)
 
-    // Создание коннектора с health monitoring
+    // Создание коннектора with health monitoring
     connector := client.NewVPNConnector(vpn, selector, logger)
     defer connector.Stop()
 
-    // Подключение с автоматическим health check
+    // Connection with автоматическим health check
     connector.ConnectWithFallback(servers)
 
     // Health checker запущен автоматически!
     // Каждые 10 секунд проверяет сервер
     // При 3 неудачных попытках - автоматический failover
 
-    // Мониторинг статуса
+    // Monitoring статуса
     for {
         status := connector.GetHealthStatus()
         log.Printf("Health: %+v", status)
@@ -227,10 +227,10 @@ func main() {
 
 ## 🔍 Сценарии работы
 
-### Сценарий 1: Сервер стал недоступен
+### Scenario 1: Server стал недоступен
 
 ```
-1. Подключение к server1 (50ms) ✓
+1. Connection to server1 (50ms) ✓
 2. Health check #1 (10s): ✓ Healthy
 3. Health check #2 (20s): ✓ Healthy
 4. Server1 падает ✗
@@ -238,35 +238,35 @@ func main() {
 6. Health check #4 (40s): ✗ Failed (attempt 2/3)
 7. Health check #5 (50s): ✗ Failed (attempt 3/3)
 8. TRIGGER FAILOVER → automatic switch to server2 (100ms)
-9. Подключение к server2 ✓
-10. Health check продолжается для server2
+9. Connection to server2 ✓
+10. Health check продолжается for server2
 ```
 
-### Сценарий 2: Временные проблемы с сетью
+### Scenario 2: Временные проблемы with сетью
 
 ```
-1. Подключение к server1 ✓
+1. Connection to server1 ✓
 2. Health check #1: ✓ Healthy
 3. Health check #2: ✗ Failed (временная ошибка)
 4. Health check #3: ✓ Healthy (восстановилось)
-5. consecutive_failures сброшен в 0
+5. consecutive_failures сброшен in 0
 6. FAILOVER НЕ происходит (было < 3 ошибок подряд)
 ```
 
-### Сценарий 3: Все серверы недоступны
+### Scenario 3: Все серверы недоступны
 
 ```
 1. Попытка server1: ✗ Failed
 2. Попытка server2: ✗ Failed
 3. Попытка server3: ✗ Failed
-4. ... все варианты исчерпаны
+4. ... all варианты исчерпаны
 5. ERROR: "Failed to connect to all servers"
-6. Программа завершается с ошибкой
+6. Программа завершается with ошибкой
 ```
 
 ---
 
-## 🧪 Тестирование
+## 🧪 Testing
 
 ### Запуск тестов
 
@@ -274,7 +274,7 @@ func main() {
 # Тесты Health Checker
 go test ./pkg/client/... -v -run TestHealthChecker
 
-# Тесты VPN Connector с health monitoring
+# Тесты VPN Connector with health monitoring
 go test ./pkg/client/... -v -run TestVPNConnector
 
 # Все тесты
@@ -284,14 +284,14 @@ go test ./pkg/client/... -v
 ### Ручное тестирование
 
 ```bash
-# 1. Запустить с реальным списком
+# 1. Start with реальным списком
 sudo goxray --from-raw https://example.com/links.txt
 
-# 2. Наблюдать health статус в логах
+# 2. Наблюдать health статус in логах
 # Каждые 30 секунд выводится статус
 
 # 3. Для проверки failover:
-# - Заблокировать текущий сервер в firewall
+# - Заблокировать текущий сервер in firewall
 # - Или отключить сеть временно
 # - Подождать ~30 секунд
 # - Увидеть автоматическое переключение
@@ -299,9 +299,9 @@ sudo goxray --from-raw https://example.com/links.txt
 
 ---
 
-## 💡 Рекомендации по использованию
+## 💡 Recommendations by использованию
 
-### 1. Настройка интервалов
+### 1. Setup интервалов
 
 Для разных сценариев:
 
@@ -319,9 +319,9 @@ NewHealthChecker(logger, 10*time.Second, 5*time.Second, 3)
 // Failover через: 10s × 3 = 30s
 ```
 
-### E2E Проверка трафика (End-to-End)
+### E2E Verification трафика (End-to-End)
 
-По умолчанию Health Checker проверяет только доступность локального SOCKS прокси. Чтобы обнаруживать ситуации, когда SOCKS прокси работает, но VPN туннель разорван (например, TLS EOF ошибки или тихие обрывы сервером), включите сквозную (E2E) проверку:
+По умолчанию Health Checker проверяет only доступность локального SOCKS прокси. Чтобы обнаруживать ситуации, когда SOCKS прокси работает, но VPN туннель разорван (например, TLS EOF ошибки or тихие обрывы сервером), включите сквозную (E2E) проверку:
 
 **Через CLI:**
 
@@ -337,15 +337,15 @@ connection:
   e2e_check_url: "http://ipinfo.io/ip"
 ```
 
-Как работает E2E проверка:
+How it works E2E проверка:
 
-1. Открывает SOCKS5 соединение с `127.0.0.1:{socks_port}`
-2. Отправляет SOCKS5 CONNECT запрос к целевому хосту (через туннель)
+1. Открывает SOCKS5 соединение with `127.0.0.1:{socks_port}`
+2. Отправляет SOCKS5 CONNECT запрос to целевому хосту (через туннель)
 3. Выполняет HTTP GET запрос через установленный туннель
 4. Проверяет корректность HTTP ответа (например, `HTTP/1.1 200 OK`)
 5. При любой ошибке (включая EOF) → считает сервер нездоровым → после `max_retries` вызывает failover
 
-> **Важно:** Используйте HTTP URL (не HTTPS) для E2E проверок, чтобы избежать лишней вычислительной нагрузки от установки TLS соединения при каждой проверке. Цель — проверить маршрутизацию данных через туннель. Рекомендуемые URL: `http://ipinfo.io/ip`, `http://connectivitycheck.gstatic.com/generate_204`.
+> **Important:** Используйте HTTP URL (не HTTPS) for E2E проверок, чтобы избежать лишней вычислительной нагрузки от установки TLS соединения when каждой проверке. Цель — проверить маршрутизацию данных через туннель. Рекомендуемые URL: `http://ipinfo.io/ip`, `http://connectivitycheck.gstatic.com/generate_204`.
 
 **Экономия трафика** (медленные сети):
 
@@ -354,9 +354,9 @@ NewHealthChecker(logger, 30*time.Second, 10*time.Second, 5)
 // Failover через: 30s × 5 = 150s (2.5 мин)
 ```
 
-### 2. Мониторинг логов
+### 2. Monitoring логов
 
-Настройте сбор логов для анализа failover:
+Настройте сбор логов for анализа failover:
 
 ```bash
 # systemd journal
@@ -368,33 +368,33 @@ sudo goxray --from-raw https://example.com/links.txt 2>&1 | tee /var/log/goxray.
 
 ### 3. Graceful shutdown
 
-Всегда вызывайте `Stop()` при завершении:
+Всегда вызывайте `Stop()` when завершении:
 
 ```go
 connector := client.NewVPNConnector(vpn, selector, logger)
-defer connector.Stop() // Важно для остановки health checker!
+defer connector.Stop() // Important for остановки health checker!
 ```
 
 ---
 
-## 🔐 Безопасность
+## 🔐 Security
 
-Health checker использует **TCP подключение** без отправки данных:
+Health checker использует **TCP подключение** without отправки данных:
 
 - ✅ Не передает sensitive information
-- ✅ Не выполняет handshake с VPN
+- ✅ Не выполняет handshake with VPN
 - ✅ Только проверяет доступность порта
 - ✅ Минимальный overhead (~1 пакет каждые 10s)
 
 ---
 
-## 📈 Производительность
+## 📈 Performance
 
 ### Resource Usage
 
 | Метрика        | Значение                    |
 | -------------- | --------------------------- |
-| **CPU**        | < 0.1% (проверка раз в 10s) |
+| **CPU**        | < 0.1% (проверка раз in 10s) |
 | **RAM**        | ~50 KB per HealthChecker    |
 | **Network**    | ~1 TCP packet / 10s         |
 | **Goroutines** | +1 per connector            |
@@ -410,10 +410,10 @@ Health checker использует **TCP подключение** без отп
 ## 🎉 Итоги
 
 ✅ **Непрерывный мониторинг** - проверка каждые 10 секунд  
-✅ **Автоматический failover** - переключение без участия пользователя  
+✅ **Автоматический failover** - переключение without участия пользователя  
 ✅ **Настраиваемость** - гибкая конфигурация интервалов  
 ✅ **Надежность** - защита от временных сбоев (consecutive failures)  
-✅ **Наблюдаемость** - подробные логи и статус  
+✅ **Наблюдаемость** - подробные логи and статус  
 ✅ **Graceful degradation** - корректная обработка всех ошибок
 
-**Ваш VPN теперь сам восстанавливается при проблемах!** 🚀
+**Ваш VPN теперь сам восстанавливается when проблемах!** 🚀

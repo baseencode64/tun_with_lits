@@ -120,7 +120,47 @@ INFO SOCKS5 proxy server started successfully address=0.0.0.0:1080 auth="no auth
 
 ### Тестирование SOCKS5
 
-#### Базовая проверка
+#### Windows PowerShell тестовый скрипт
+
+GoXRay включает PowerShell скрипт для тестирования на Windows:
+
+```powershell
+# Запустить тестовый скрипт
+.\test_socks5.ps1
+```
+
+**Скрипт проверит:**
+
+- ✅ Слушает ли SOCKS5 порт
+- ✅ Ваш реальный IP (без прокси)
+- ✅ SOCKS5 подключение с curl.exe
+- ✅ SOCKS5 handshake протокол
+- ✅ Сравнит IP адреса для подтверждения что трафик идет через VPN
+
+**Ожидаемый вывод:**
+
+```
+=== GoXRay SOCKS5 Proxy Test ===
+
+[1/4] Checking if SOCKS5 port is listening...
+✓ SOCKS5 port 1080 is open and listening
+
+[2/4] Getting your real IP address (without proxy)...
+✓ Your real IP: 85.202.184.14
+
+[3/4] Testing SOCKS5 proxy with curl...
+✓ SOCKS5 proxy connection successful
+  IP through SOCKS5: 45.77.236.204
+
+✓ SUCCESS: Traffic is going through VPN!
+  Real IP:        85.202.184.14
+  VPN IP (SOCKS5): 45.77.236.204
+
+[4/4] Testing SOCKS5 handshake...
+✓ SOCKS5 handshake successful
+```
+
+#### Linux/macOS тестирование
 
 ```bash
 # Проверить IP без VPN
@@ -177,13 +217,19 @@ wget --proxy-user=myuser --proxy-password=mypass \
 **Windows:**
 
 ```powershell
-# Открыть настройки прокси
+# Открыть настройки прокси через GUI
 start ms-settings:network-proxy
 
 # Или через PowerShell (требуется Administrator)
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name ProxyEnable -Value 1
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name ProxyServer -Value "socks=localhost:1080"
 ```
+
+**Примечание для пользователей Windows:**
+
+- Windows не поддерживает SOCKS5 в системных настройках прокси нативно
+- Используйте расширения браузера (Proxy SwitchyOmega) или настройки прокси в приложениях
+- Для системного SOCKS5 используйте сторонние инструменты: Proxifier или ProxyCap
 
 **Linux:**
 
@@ -555,14 +601,22 @@ curl --socks5 localhost:1080 https://api.ipify.org
 ./goxray --config config.yaml
 # Должно показать: INFO VPN client connected successfully
 
-# Проверить маршруты
+# Проверить маршруты (Linux/macOS)
 ip route show
 # Должно показать маршруты через tun0
 ```
 
 **Решение:**
 
-1. **Проверить, что VPN действительно работает:**
+1. **Запустить тестовый скрипт (Windows):**
+
+```powershell
+.\test_socks5.ps1
+```
+
+Скрипт автоматически диагностирует проблему и покажет идет ли трафик через VPN.
+
+2. **Проверить что VPN действительно работает (Linux/macOS):**
 
 ```bash
 # Проверить IP через TUN интерфейс
@@ -570,14 +624,26 @@ curl --interface tun0 https://api.ipify.org
 # Должен показать IP VPN сервера
 ```
 
-2. **Перезапустить GoXRay:**
+3. **Перезапустить GoXRay с debug логами:**
 
 ```bash
 # Остановить
 pkill goxray
 
-# Запустить с debug логами
+# Запустить с debug логированием
 ./goxray --config config.yaml --log-level debug
+```
+
+4. **Проверить правила маршрутизации:**
+
+На Linux/macOS GoXRay создает правила маршрутизации, которые направляют весь трафик (включая от SOCKS5 сервера) через TUN устройство. Проверьте что эти правила существуют:
+
+```bash
+# Linux
+ip route show | grep tun0
+
+# macOS
+netstat -rn | grep tun0
 ```
 
 ---
@@ -690,18 +756,67 @@ socks5:
 
 ---
 
-## Support
+## Особенности для Windows
 
-**Documentation:**
+### Тестирование на Windows
 
-- [README.md](README.md) - Основная документация
-- [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) - Docker deployment
-- [SPLIT_TUNNELING_USAGE.md](SPLIT_TUNNELING_USAGE.md) - Split tunneling
-- [KILLSWITCH_USAGE.md](KILLSWITCH_USAGE.md) - Kill switch
+GoXRay предоставляет PowerShell тестовый скрипт (`test_socks5.ps1`) специально для пользователей Windows:
 
-**Issues**: Report bugs via GitHub Issues
+```powershell
+# Скачать и запустить тестовый скрипт
+.\test_socks5.ps1
+```
+
+Этот скрипт:
+
+- Тестирует SOCKS5 подключение
+- Проверяет маршрутизацию трафика через VPN
+- Предоставляет детальную диагностику
+- Работает без curl.exe (использует нативные команды PowerShell)
+
+### Windows Firewall
+
+Если SOCKS5 недоступен с других машин в вашей сети:
+
+```powershell
+# Разрешить SOCKS5 через Windows Firewall
+New-NetFirewallRule -DisplayName "GoXRay SOCKS5" `
+                    -Direction Inbound `
+                    -LocalPort 1080 `
+                    -Protocol TCP `
+                    -Action Allow
+```
+
+### Windows приложения
+
+Многие Windows приложения поддерживают SOCKS5 прокси:
+
+- **Браузеры**: Firefox (нативно), Chrome/Edge (через расширение)
+- **Менеджеры загрузок**: IDM, Free Download Manager
+- **Torrent клиенты**: qBittorrent, Transmission
+- **Git**: Git for Windows
+- **WSL2**: Настройка прокси в WSL2 окружении
 
 ---
 
-**Version**: v1.7.0  
-**Last Updated**: 2026-06-01
+## Поддержка
+
+**Документация:**
+
+- [Главный README](../../../README_RU.md) - Обзор проекта
+- [Split Tunneling](SPLIT_TUNNELING.md) - Выборочная маршрутизация
+- [Kill Switch](KILLSWITCH.md) - Защита от утечек IP
+- [Docker Deployment](../deployment/DOCKER.md) - Настройка Docker
+
+**Тестирование:**
+
+- Windows: `test_socks5.ps1` (включен в репозиторий)
+- Linux/macOS: `curl --socks5 localhost:1080 https://api.ipify.org`
+
+**Issues**: Сообщайте об ошибках через [GitHub Issues](https://github.com/baseencode64/tun_with_lits/issues)
+
+---
+
+**Версия**: v1.7.0  
+**Последнее обновление**: 2026-06-03  
+**Протестировано на**: Windows 10/11, Linux (Ubuntu, Debian), macOS

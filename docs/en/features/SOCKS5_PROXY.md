@@ -1,54 +1,55 @@
-# 🪟 Windows VPN Proxy Guide - SOCKS5 Proxy через GoXRay
+# 🪟 Windows VPN Proxy Guide - SOCKS5 Proxy with GoXRay
 
 **Version**: v1.7.0  
-**Date**: 2026-06-01  
-**Platform**: Windows 10/11, Linux
+**Date**: 2026-06-03  
+**Platform**: Windows 10/11, Linux, macOS
 
 ---
 
-## 📖 Содержание
+## 📖 Table of Contents
 
-1. [Обзор](#обзор)
-2. [Встроенный SOCKS5 сервер](#встроенный-socks5-сервер)
-3. [Конфигурация](#конфигурация)
-4. [Использование](#использование)
-5. [Аутентификация](#аутентификация)
-6. [Безопасность](#безопасность)
+1. [Overview](#overview)
+2. [Built-in SOCKS5 Server](#built-in-socks5-server)
+3. [Configuration](#configuration)
+4. [Usage](#usage)
+5. [Authentication](#authentication)
+6. [Security](#security)
 7. [Troubleshooting](#troubleshooting)
+8. [Windows-Specific Notes](#windows-specific-notes)
 
 ---
 
-## Обзор
+## Overview
 
-GoXRay VPN Client теперь включает **встроенный SOCKS5 прокси-сервер**, который позволяет приложениям маршрутизировать трафик через VPN туннель.
+GoXRay VPN Client now includes a **built-in SOCKS5 proxy server** that allows applications to route traffic through the VPN tunnel.
 
-### Зачем нужен SOCKS5 прокси?
+### Why do you need a SOCKS5 proxy?
 
-Некоторые приложения могут не автоматически использовать TUN интерфейс, созданный GoXRay. Это особенно актуально для:
+Some applications may not automatically use the TUN interface created by GoXRay. This is especially relevant for:
 
-- ✅ Приложений, которые не учитывают системные таблицы маршрутизации
-- ✅ Docker контейнеров
+- ✅ Applications that don't respect system routing tables
+- ✅ Docker containers
 - ✅ WSL2 (Windows Subsystem for Linux)
-- ✅ Некоторых браузеров и менеджеров загрузок
-- ✅ Приложений, требующих явной настройки прокси
+- ✅ Some browsers and download managers
+- ✅ Applications requiring explicit proxy configuration
 
-### Преимущества встроенного SOCKS5
+### Benefits of Built-in SOCKS5
 
-- ✅ **Не требуется внешний прокси-сервер** (Dante, SSH tunnel, Privoxy)
-- ✅ **Автоматический запуск/остановка** вместе с VPN
-- ✅ **Трафик автоматически идет через VPN** туннель
-- ✅ **Поддержка аутентификации** username/password
-- ✅ **Graceful shutdown** при остановке VPN
-- ✅ **Подробное логирование** всех событий
+- ✅ **No external proxy server required** (Dante, SSH tunnel, Privoxy)
+- ✅ **Automatic start/stop** with VPN connection
+- ✅ **Traffic automatically routed through VPN** tunnel
+- ✅ **Authentication support** username/password
+- ✅ **Graceful shutdown** when VPN disconnects
+- ✅ **Detailed logging** of all events
 
 ---
 
-## Встроенный SOCKS5 сервер
+## Built-in SOCKS5 Server
 
-### Архитектура
+### Architecture
 
 ```
-Windows/Linux Application
+Windows/Linux/macOS Application
   ↓
 SOCKS5 Proxy (localhost:1080)
   ↓
@@ -61,17 +62,17 @@ VPN Server
 Internet
 ```
 
-**Ключевая особенность:** SOCKS5 сервер запускается **внутри GoXRay** и автоматически маршрутизирует весь трафик через VPN туннель.
+**Key feature:** SOCKS5 server runs **inside GoXRay** and automatically routes all traffic through the VPN tunnel.
 
 ---
 
-## Конфигурация
+## Configuration
 
-### 1. Включить SOCKS5 в config.yaml
+### 1. Enable SOCKS5 in config.yaml
 
 ```yaml
 # SOCKS5 proxy server (optional)
-# Allows Windows applications to route traffic through VPN via SOCKS5 proxy
+# Allows applications to route traffic through VPN via SOCKS5 proxy
 # Useful for applications that don't support TUN/TAP or need explicit proxy configuration
 socks5:
   # Enable SOCKS5 proxy server (default: false)
@@ -92,21 +93,21 @@ socks5:
   timeout: "30s"
 ```
 
-### 2. Запустить GoXRay VPN
+### 2. Start GoXRay VPN
 
 ```bash
-# С конфигурационным файлом
+# With configuration file
 ./goxray --config config.yaml
 
-# Или с CLI аргументами + from-raw
+# Or with CLI arguments + from-raw
 ./goxray --from-raw https://example.com/links.txt
 ```
 
-**SOCKS5 сервер запустится автоматически** после успешного VPN подключения!
+**SOCKS5 server will start automatically** after successful VPN connection!
 
-### 3. Проверить логи
+### 3. Check logs
 
-Вы увидите в логах:
+You will see in the logs:
 
 ```
 INFO VPN client connected successfully tun_address=192.18.0.1/32 xray_server=1.2.3.4:443
@@ -116,108 +117,154 @@ INFO SOCKS5 proxy server started successfully address=0.0.0.0:1080 auth="no auth
 
 ---
 
-## Использование
+## Usage
 
-### Тестирование SOCKS5
+### Testing SOCKS5
 
-#### Базовая проверка
+#### Windows PowerShell Testing Script
 
-```bash
-# Проверить IP без VPN
-curl https://api.ipify.org
-# Вывод: 203.0.113.1 (ваш реальный IP)
+GoXRay includes a PowerShell test script for Windows users:
 
-# Проверить IP через SOCKS5 прокси
-curl --socks5 localhost:1080 https://api.ipify.org
-# Вывод: 198.51.100.1 (IP VPN сервера)
+```powershell
+# Run the test script
+.\test_socks5.ps1
 ```
 
-#### С аутентификацией
+**The script will:**
+
+- ✅ Check if SOCKS5 port is listening
+- ✅ Get your real IP (without proxy)
+- ✅ Test SOCKS5 connection with curl.exe
+- ✅ Verify SOCKS5 handshake protocol
+- ✅ Compare IPs to confirm traffic goes through VPN
+
+**Expected output:**
+
+```
+=== GoXRay SOCKS5 Proxy Test ===
+
+[1/4] Checking if SOCKS5 port is listening...
+✓ SOCKS5 port 1080 is open and listening
+
+[2/4] Getting your real IP address (without proxy)...
+✓ Your real IP: 85.202.184.14
+
+[3/4] Testing SOCKS5 proxy with curl...
+✓ SOCKS5 proxy connection successful
+  IP through SOCKS5: 45.77.236.204
+
+✓ SUCCESS: Traffic is going through VPN!
+  Real IP:        85.202.184.14
+  VPN IP (SOCKS5): 45.77.236.204
+
+[4/4] Testing SOCKS5 handshake...
+✓ SOCKS5 handshake successful
+```
+
+#### Linux/macOS Testing
 
 ```bash
-# Если настроена аутентификация
+# Check IP without VPN
+curl https://api.ipify.org
+# Output: 203.0.113.1 (your real IP)
+
+# Check IP through SOCKS5 proxy
+curl --socks5 localhost:1080 https://api.ipify.org
+# Output: 198.51.100.1 (VPN server IP)
+```
+
+#### With Authentication
+
+```bash
+# If authentication is configured
 curl --socks5 myuser:mypass@localhost:1080 https://api.ipify.org
 ```
 
-#### Проверка с wget
+#### Testing with wget
 
 ```bash
-# Без аутентификации
+# Without authentication
 wget -e use_proxy=yes -e socks_proxy=localhost:1080 https://api.ipify.org -O -
 
-# С аутентификацией
+# With authentication
 wget --proxy-user=myuser --proxy-password=mypass \
      -e use_proxy=yes -e socks_proxy=localhost:1080 \
      https://api.ipify.org -O -
 ```
 
-### Настройка браузеров
+### Browser Configuration
 
 #### Firefox
 
-1. Открыть **Settings** → **Network Settings**
-2. Выбрать **Manual proxy configuration**
+1. Open **Settings** → **Network Settings**
+2. Select **Manual proxy configuration**
 3. **SOCKS Host**: `localhost`
 4. **Port**: `1080`
-5. **SOCKS v5**: ✓ (включить)
-6. **Proxy DNS when using SOCKS v5**: ✓ (включить для защиты DNS)
+5. **SOCKS v5**: ✓ (enable)
+6. **Proxy DNS when using SOCKS v5**: ✓ (enable for DNS protection)
 
-#### Chrome/Edge (через расширение)
+#### Chrome/Edge (via extension)
 
-Установить **Proxy SwitchyOmega**:
+Install **Proxy SwitchyOmega**:
 
 1. [Chrome Web Store](https://chrome.google.com/webstore/detail/proxy-switchyomega/)
-2. Создать новый профиль → **Proxy Profile**
+2. Create new profile → **Proxy Profile**
 3. **Protocol**: SOCKS5
 4. **Server**: localhost
 5. **Port**: 1080
 
-#### Chrome/Edge (системные настройки)
+#### Chrome/Edge (system settings)
 
 **Windows:**
 
 ```powershell
-# Открыть настройки прокси
+# Open proxy settings GUI
 start ms-settings:network-proxy
 
-# Или через PowerShell (требуется Administrator)
+# Or via PowerShell (requires Administrator)
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name ProxyEnable -Value 1
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name ProxyServer -Value "socks=localhost:1080"
 ```
 
+**Note for Windows users:**
+
+- Windows doesn't natively support SOCKS5 in system proxy settings
+- Use browser extensions (Proxy SwitchyOmega) or application-specific proxy settings
+- For system-wide SOCKS5, use third-party tools like Proxifier or ProxyCap
+
 **Linux:**
 
 ```bash
-# Через переменные окружения
+# Via environment variables
 export ALL_PROXY=socks5://localhost:1080
 export HTTP_PROXY=socks5://localhost:1080
 export HTTPS_PROXY=socks5://localhost:1080
 
-# Запустить Chrome
+# Start Chrome
 google-chrome --proxy-server="socks5://localhost:1080"
 ```
 
-### Настройка приложений
+### Application Configuration
 
 #### Git
 
 ```bash
-# Глобально
+# Globally
 git config --global http.proxy socks5://localhost:1080
 git config --global https.proxy socks5://localhost:1080
 
-# Для конкретного репозитория
+# For specific repository
 git config http.proxy socks5://localhost:1080
 
-# Отключить прокси
+# Disable proxy
 git config --global --unset http.proxy
 git config --global --unset https.proxy
 ```
 
-#### Docker (внутри контейнера)
+#### Docker (inside container)
 
 ```bash
-# Запустить контейнер с прокси
+# Run container with proxy
 docker run -e HTTP_PROXY=socks5://host.docker.internal:1080 \
            -e HTTPS_PROXY=socks5://host.docker.internal:1080 \
            alpine wget -O - https://api.ipify.org
@@ -252,9 +299,9 @@ fetch("https://api.ipify.org", { agent })
 
 ---
 
-## Аутентификация
+## Authentication
 
-### Включить аутентификацию
+### Enable Authentication
 
 ```yaml
 socks5:
@@ -265,13 +312,13 @@ socks5:
   timeout: "30s"
 ```
 
-После перезапуска GoXRay:
+After restarting GoXRay:
 
 ```
 INFO SOCKS5 proxy server started successfully address=0.0.0.0:1080 auth="username/password authentication (user: myuser)" timeout=30s
 ```
 
-### Использование с аутентификацией
+### Using with Authentication
 
 ```bash
 # curl
@@ -294,53 +341,53 @@ proxies = {
 
 ---
 
-## Безопасность
+## Security
 
-### Рекомендации
+### Recommendations
 
-#### 1. Используйте аутентификацию для удаленного доступа
+#### 1. Use authentication for remote access
 
-Если SOCKS5 доступен из сети (`0.0.0.0:1080`), **обязательно** используйте аутентификацию:
+If SOCKS5 is accessible from network (`0.0.0.0:1080`), **always** use authentication:
 
 ```yaml
 socks5:
   enabled: true
-  listen_addr: "0.0.0.0:1080" # Доступен из сети
+  listen_addr: "0.0.0.0:1080" # Accessible from network
   username: "stronguser"
   password: "VeryStr0ngP@ssw0rd!123"
   timeout: "30s"
 ```
 
-#### 2. Ограничьте доступ только localhost
+#### 2. Restrict access to localhost only
 
-Если удаленный доступ не нужен, слушайте только на localhost:
+If remote access is not needed, listen only on localhost:
 
 ```yaml
 socks5:
   enabled: true
-  listen_addr: "127.0.0.1:1080" # Только localhost
+  listen_addr: "127.0.0.1:1080" # Localhost only
   username: ""
   password: ""
   timeout: "30s"
 ```
 
-#### 3. Используйте firewall
+#### 3. Use firewall
 
 **Linux (iptables):**
 
 ```bash
-# Разрешить только локальную сеть
+# Allow only local network
 sudo iptables -A INPUT -p tcp --dport 1080 -s 192.168.0.0/16 -j ACCEPT
 sudo iptables -A INPUT -p tcp --dport 1080 -j DROP
 
-# Сохранить правила
+# Save rules
 sudo iptables-save > /etc/iptables/rules.v4
 ```
 
 **Windows (PowerShell Administrator):**
 
 ```powershell
-# Разрешить только локальную сеть
+# Allow only local network
 New-NetFirewallRule -DisplayName "Allow SOCKS5 Local" `
                     -Direction Inbound `
                     -LocalPort 1080 `
@@ -348,7 +395,7 @@ New-NetFirewallRule -DisplayName "Allow SOCKS5 Local" `
                     -RemoteAddress 192.168.0.0/16 `
                     -Action Allow
 
-# Заблокировать все остальное
+# Block everything else
 New-NetFirewallRule -DisplayName "Block SOCKS5 External" `
                     -Direction Inbound `
                     -LocalPort 1080 `
@@ -356,9 +403,9 @@ New-NetFirewallRule -DisplayName "Block SOCKS5 External" `
                     -Action Block
 ```
 
-#### 4. Используйте Kill Switch
+#### 4. Use Kill Switch
 
-Включите Kill Switch для предотвращения утечек IP при разрыве VPN:
+Enable Kill Switch to prevent IP leaks when VPN disconnects:
 
 ```yaml
 connection:
@@ -369,15 +416,15 @@ connection:
 
 ## Troubleshooting
 
-### Issue 1: SOCKS5 не запускается
+### Issue 1: SOCKS5 doesn't start
 
-**Симптомы:**
+**Symptoms:**
 
 ```
 WARN Failed to start SOCKS5 server error="listen tcp 0.0.0.0:1080: bind: address already in use"
 ```
 
-**Диагностика:**
+**Diagnosis:**
 
 ```bash
 # Linux
@@ -388,60 +435,60 @@ sudo lsof -i :1080
 netstat -an | findstr 1080
 ```
 
-**Решение:**
+**Solution:**
 
-1. **Изменить порт:**
+1. **Change port:**
 
 ```yaml
 socks5:
-  listen_addr: "0.0.0.0:1081" # Использовать другой порт
+  listen_addr: "0.0.0.0:1081" # Use different port
 ```
 
-2. **Остановить конфликтующий процесс:**
+2. **Stop conflicting process:**
 
 ```bash
 # Linux
 sudo kill $(sudo lsof -t -i:1080)
 
 # Windows
-# Найти PID
+# Find PID
 netstat -ano | findstr 1080
-# Остановить процесс
+# Stop process
 taskkill /PID <PID> /F
 ```
 
 ---
 
-### Issue 2: Приложение не подключается к SOCKS5
+### Issue 2: Application can't connect to SOCKS5
 
-**Симптомы:**
+**Symptoms:**
 
 ```
 Connection refused to localhost:1080
 ```
 
-**Диагностика:**
+**Diagnosis:**
 
 ```bash
-# Проверить, что SOCKS5 запущен
+# Check if SOCKS5 is running
 curl --socks5 localhost:1080 https://api.ipify.org
 
-# Проверить логи GoXRay
+# Check GoXRay logs
 ./goxray --config config.yaml --log-level debug
 ```
 
-**Решение:**
+**Solution:**
 
-1. **Проверить, что VPN подключен:**
+1. **Check that VPN is connected:**
 
 ```bash
-# SOCKS5 запускается ТОЛЬКО после успешного VPN подключения
-# Проверить логи:
+# SOCKS5 starts ONLY after successful VPN connection
+# Check logs:
 INFO VPN client connected successfully
 INFO SOCKS5 proxy server started successfully
 ```
 
-2. **Проверить firewall:**
+2. **Check firewall:**
 
 ```bash
 # Linux
@@ -451,142 +498,162 @@ sudo iptables -L -n | grep 1080
 Get-NetFirewallRule | Where-Object {$_.LocalPort -eq 1080}
 ```
 
-3. **Проверить, что порт слушается:**
+3. **Check that port is listening:**
 
 ```bash
 # Linux
 sudo netstat -tuln | grep 1080
-# Должно показать: tcp 0 0 0.0.0.0:1080 0.0.0.0:* LISTEN
+# Should show: tcp 0 0 0.0.0.0:1080 0.0.0.0:* LISTEN
 
 # Windows
 netstat -an | findstr 1080
-# Должно показать: TCP 0.0.0.0:1080 0.0.0.0:0 LISTENING
+# Should show: TCP 0.0.0.0:1080 0.0.0.0:0 LISTENING
 ```
 
 ---
 
-### Issue 3: DNS не резолвится через прокси
+### Issue 3: DNS doesn't resolve through proxy
 
-**Симптомы:**
+**Symptoms:**
 
 ```
 curl: (6) Could not resolve host: example.com
 ```
 
-**Решение:**
+**Solution:**
 
-1. **Включить DNS protection в GoXRay:**
+1. **Enable DNS protection in GoXRay:**
 
 ```yaml
 connection:
   enable_dns_protection: true
 ```
 
-2. **В браузере (Firefox):**
+2. **In browser (Firefox):**
 
-- Включить **"Proxy DNS when using SOCKS v5"**
+- Enable **"Proxy DNS when using SOCKS v5"**
 
-3. **В curl использовать --socks5-hostname:**
+3. **In curl use --socks5-hostname:**
 
 ```bash
-# Резолвить DNS через SOCKS5
+# Resolve DNS through SOCKS5
 curl --socks5-hostname localhost:1080 https://example.com
 ```
 
 ---
 
-### Issue 4: Медленная скорость через SOCKS5
+### Issue 4: Slow speed through SOCKS5
 
-**Диагностика:**
+**Diagnosis:**
 
 ```bash
-# Проверить скорость напрямую (без SOCKS5)
+# Check speed directly (without SOCKS5)
 curl -o /dev/null https://speed.cloudflare.com/__down?bytes=100000000
 
-# Проверить через SOCKS5
+# Check through SOCKS5
 curl --socks5 localhost:1080 -o /dev/null https://speed.cloudflare.com/__down?bytes=100000000
 ```
 
-**Решение:**
+**Solution:**
 
-1. **Увеличить timeout:**
+1. **Increase timeout:**
 
 ```yaml
 socks5:
-  timeout: "60s" # Увеличить с 30s до 60s
+  timeout: "60s" # Increase from 30s to 60s
 ```
 
-2. **Проверить скорость VPN сервера:**
+2. **Check VPN server speed:**
 
 ```bash
-# Проверить ping
+# Check ping
 ping <vpn-server-ip>
 
-# Проверить через VPN
+# Check through VPN
 curl --socks5 localhost:1080 https://speed.cloudflare.com/cdn-cgi/trace
 ```
 
-3. **Использовать Split Tunneling:**
+3. **Use Split Tunneling:**
 
 ```yaml
 split_tunneling:
   enabled: true
   mode: "exclude"
   exclude_cidrs:
-    - "192.168.0.0/16" # Локальная сеть напрямую
-    - "10.0.0.0/8" # Корпоративная сеть
+    - "192.168.0.0/16" # Local network direct
+    - "10.0.0.0/8" # Corporate network
 ```
 
 ---
 
-### Issue 5: SOCKS5 работает, но IP не меняется
+### Issue 5: SOCKS5 works but IP doesn't change
 
-**Симптомы:**
+**Symptoms:**
 
 ```bash
 curl --socks5 localhost:1080 https://api.ipify.org
-# Показывает реальный IP, а не VPN
+# Shows real IP instead of VPN IP
 ```
 
-**Диагностика:**
+**Diagnosis:**
 
 ```bash
-# Проверить, что VPN подключен
+# Check if VPN is connected
 ./goxray --config config.yaml
-# Должно показать: INFO VPN client connected successfully
+# Should show: INFO VPN client connected successfully
 
-# Проверить маршруты
+# Check routes (Linux/macOS)
 ip route show
-# Должно показать маршруты через tun0
+# Should show routes through tun0
 ```
 
-**Решение:**
+**Solution:**
 
-1. **Проверить, что VPN действительно работает:**
+1. **Run the test script (Windows):**
+
+```powershell
+.\test_socks5.ps1
+```
+
+This will automatically diagnose the issue and show if traffic is going through VPN.
+
+2. **Verify VPN is actually working (Linux/macOS):**
 
 ```bash
-# Проверить IP через TUN интерфейс
+# Check IP through TUN interface
 curl --interface tun0 https://api.ipify.org
-# Должен показать IP VPN сервера
+# Should show VPN server IP
 ```
 
-2. **Перезапустить GoXRay:**
+3. **Restart GoXRay with debug logs:**
 
 ```bash
-# Остановить
+# Stop
 pkill goxray
 
-# Запустить с debug логами
+# Start with debug logging
 ./goxray --config config.yaml --log-level debug
+```
+
+4. **Check routing rules:**
+
+On Linux/macOS, GoXRay creates routing rules that direct all traffic (including from SOCKS5 server) through the TUN device. Verify these rules exist:
+
+```bash
+# Linux
+ip route show | grep tun0
+
+# macOS
+netstat -rn | grep tun0
 ```
 
 ---
 
 ## Best Practices
 
-### 1. Используйте config.yaml
+### 1. Use config.yaml
 
-Не используйте CLI аргументы для SOCKS5 - используйте `config.yaml`:
+Don't use CLI arguments for SOCKS5 - use `config.yaml`:
 
 ```yaml
 socks5:
@@ -597,28 +664,28 @@ socks5:
   timeout: "30s"
 ```
 
-### 2. Комбинируйте с Split Tunneling
+### 2. Combine with Split Tunneling
 
 ```yaml
 split_tunneling:
   enabled: true
   mode: "exclude"
   exclude_cidrs:
-    - "192.168.0.0/16" # Локальная сеть напрямую
-    - "10.0.0.0/8" # Корпоративная сеть
+    - "192.168.0.0/16" # Local network direct
+    - "10.0.0.0/8" # Corporate network
 
 socks5:
   enabled: true
   listen_addr: "0.0.0.0:1080"
 ```
 
-**Результат:**
+**Result:**
 
-- Локальные ресурсы доступны напрямую
-- Интернет через VPN
-- SOCKS5 для приложений, которые не поддерживают TUN
+- Local resources accessible directly
+- Internet through VPN
+- SOCKS5 for applications that don't support TUN
 
-### 3. Используйте Kill Switch
+### 3. Use Kill Switch
 
 ```yaml
 connection:
@@ -629,22 +696,22 @@ socks5:
   enabled: true
 ```
 
-**Результат:**
+**Result:**
 
-- Защита от утечек IP при разрыве VPN
-- Защита от утечек DNS
-- SOCKS5 для явной настройки прокси
+- Protection from IP leaks when VPN disconnects
+- Protection from DNS leaks
+- SOCKS5 for explicit proxy configuration
 
-### 4. Мониторинг
+### 4. Monitoring
 
 ```bash
-# Проверить статус VPN
+# Check VPN status
 curl --socks5 localhost:1080 https://api.ipify.org
 
-# Проверить метрики (если включены)
+# Check metrics (if enabled)
 curl http://localhost:9090/metrics | grep vpn_connected
 
-# Проверить логи
+# Check logs
 tail -f /var/log/goxray/goxray.log
 ```
 
@@ -652,7 +719,7 @@ tail -f /var/log/goxray/goxray.log
 
 ## Summary
 
-### Рекомендуемая конфигурация
+### Recommended Configuration
 
 ```yaml
 # config.yaml
@@ -679,14 +746,57 @@ socks5:
   timeout: "30s"
 ```
 
-### Результат
+### Result
 
-- ✅ Весь интернет-трафик через VPN
-- ✅ Локальная сеть напрямую (Split Tunneling)
-- ✅ DNS защищен от утечек
-- ✅ Kill Switch предотвращает утечки IP
-- ✅ SOCKS5 для приложений с явной настройкой прокси
-- ✅ Простая настройка и использование
+- ✅ All internet traffic through VPN
+- ✅ Local network direct (Split Tunneling)
+- ✅ DNS protected from leaks
+- ✅ Kill Switch prevents IP leaks
+- ✅ SOCKS5 for applications with explicit proxy configuration
+- ✅ Simple setup and usage
+
+---
+
+## Windows-Specific Notes
+
+### Testing on Windows
+
+GoXRay provides a PowerShell test script (`test_socks5.ps1`) specifically for Windows users:
+
+```powershell
+# Download and run the test script
+.\test_socks5.ps1
+```
+
+This script:
+
+- Tests SOCKS5 connectivity
+- Verifies traffic routing through VPN
+- Provides detailed diagnostics
+- Works without requiring curl.exe (uses PowerShell native commands)
+
+### Windows Firewall
+
+If SOCKS5 is not accessible from other machines on your network:
+
+```powershell
+# Allow SOCKS5 through Windows Firewall
+New-NetFirewallRule -DisplayName "GoXRay SOCKS5" `
+                    -Direction Inbound `
+                    -LocalPort 1080 `
+                    -Protocol TCP `
+                    -Action Allow
+```
+
+### Windows Applications
+
+Many Windows applications support SOCKS5 proxy:
+
+- **Browsers**: Firefox (native), Chrome/Edge (via extension)
+- **Download Managers**: IDM, Free Download Manager
+- **Torrent Clients**: qBittorrent, Transmission
+- **Git**: Git for Windows
+- **WSL2**: Configure proxy in WSL2 environment
 
 ---
 
@@ -694,14 +804,20 @@ socks5:
 
 **Documentation:**
 
-- [README.md](README.md) - Основная документация
-- [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) - Docker deployment
-- [SPLIT_TUNNELING_USAGE.md](SPLIT_TUNNELING_USAGE.md) - Split tunneling
-- [KILLSWITCH_USAGE.md](KILLSWITCH_USAGE.md) - Kill switch
+- [Main README](../../../README.md) - Project overview
+- [Split Tunneling](SPLIT_TUNNELING.md) - Selective routing
+- [Kill Switch](KILLSWITCH.md) - IP leak protection
+- [Docker Deployment](../deployment/DOCKER.md) - Docker setup
 
-**Issues**: Report bugs via GitHub Issues
+**Testing:**
+
+- Windows: `test_socks5.ps1` (included in repository)
+- Linux/macOS: `curl --socks5 localhost:1080 https://api.ipify.org`
+
+**Issues**: Report bugs via [GitHub Issues](https://github.com/baseencode64/tun_with_lits/issues)
 
 ---
 
 **Version**: v1.7.0  
-**Last Updated**: 2026-06-01
+**Last Updated**: 2026-06-03  
+**Tested on**: Windows 10/11, Linux (Ubuntu, Debian), macOS

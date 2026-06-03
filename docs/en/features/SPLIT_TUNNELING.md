@@ -6,30 +6,30 @@
 
 ---
 
-## 📖 Содержание
+## 📖 Table of Contents
 
-1. [Что такое Split Tunneling?](#что-такое-split-tunneling)
-2. [Быстрый старт](#быстрый-старт)
-3. [Режимы работы](#режимы-работы)
-4. [Примеры конфигурации](#примеры-конфигурации)
-5. [Практические сценарии](#практические-сценарии)
-6. [Интеграция с другими функциями](#интеграция-с-другими-функциями)
-7. [Мониторинг и отладка](#мониторинг-и-отладка)
+1. [What is Split Tunneling?](#что-такое-split-tunneling)
+2. [Quick Start](#быстрый-старт)
+3. [Operating Modes](#режимы-работы)
+4. [Examples конфигурации](#примеры-конфигурации)
+5. [Practical Scenarios](#практические-сценарии)
+6. [Integration with Other Features](#интеграция-with-другими-функциями)
+7. [Monitoring and Debugging](#мониторинг-and-отладка)
 8. [Troubleshooting](#troubleshooting)
 9. [FAQ](#faq)
 
 ---
 
-## Что такое Split Tunneling?
+## What is Split Tunneling?
 
-### Определение
+### Definition
 
 **Split Tunneling** (раздельное туннелирование) - это технология, которая позволяет **выборочно** направлять сетевой трафик:
 
-- **Часть трафика** → через VPN туннель (защищено, анонимно)
-- **Часть трафика** → напрямую через ISP (быстрее, без VPN)
+- **Часть трафика** → through VPN туннель (защищено, анонимно)
+- **Часть трафика** → directly через ISP (быстрее, without VPN)
 
-### Зачем это нужно?
+### Зачем это need?
 
 #### ❌ Без Split Tunneling
 
@@ -38,16 +38,16 @@
 │ Ваш компьютер│
 └──────┬───────┘
        │
-       │ ВСЁ через VPN
+       │ ВСЁ through VPN
        ▼
 ┌──────────────┐      ┌──────────────┐
-│  VPN Сервер  │─────▶│   Интернет   │
+│  VPN Server  │─────▶│   Internet   │
 └──────────────┘      └──────────────┘
 
-Проблемы:
-❌ Локальный принтер недоступен
+Problems:
+❌ Local принтер недоступен
 ❌ Netflix медленный (VPN далеко)
-❌ Лишняя нагрузка на VPN сервер
+❌ Лишняя нагрузка on VPN server
 ```
 
 #### ✅ Со Split Tunneling
@@ -59,32 +59,32 @@
        │
        ├─────────────────────────────┐
        │                             │
-       │ Публичный трафик            │ Локальный трафик
+       │ Public трафик            │ Local трафик
        ▼                             ▼
 ┌──────────────┐      ┌──────────────┐
-│  VPN Сервер  │      │ Локальная    │
+│  VPN Server  │      │ Локальная    │
 │              │      │ сеть / ISP   │
 └──────┬───────┘      └──────────────┘
        │
        ▼
 ┌──────────────┐
-│   Интернет   │
+│   Internet   │
 └──────────────┘
 
-Преимущества:
+Benefits:
 ✅ Локальные устройства доступны
-✅ Streaming на полной скорости
+✅ Streaming on полной скорости
 ✅ Экономия bandwidth VPN
 ✅ Гибкий контроль трафика
 ```
 
 ---
 
-## Быстрый старт
+## Quick Start
 
-### Шаг 1: Обновите конфигурацию
+### Step 1: Обновите конфигурацию
 
-Добавьте секцию `split_tunneling` в ваш `config.yaml`:
+Добавьте секцию `split_tunneling` in ваш `config.yaml`:
 
 ```yaml
 # config.yaml
@@ -101,62 +101,62 @@ split_tunneling:
   enabled: true
   mode: "exclude"
   exclude_cidrs:
-    - "192.168.0.0/16" # Локальная сеть
-    - "10.0.0.0/8" # Корпоративная сеть
+    - "192.168.0.0/16" # Local network
+    - "10.0.0.0/8" # Corporate network
 ```
 
-### Шаг 2: Перезапустите GoXRay
+### Step 2: Перезапустите GoXRay
 
 ```bash
 # Остановите текущий процесс
 sudo systemctl stop goxray
 
-# Запустите с новой конфигурацией
+# Запустите with новой конфигурацией
 sudo systemctl start goxray
 
 # Проверьте логи
 sudo journalctl -u goxray -f | grep "split tunnel"
 ```
 
-### Шаг 3: Проверьте работу
+### Step 3: Проверьте работу
 
 ```bash
-# Проверка 1: Локальная сеть доступна напрямую
+# Verification 1: Local network доступна directly
 ping 192.168.1.1
 # Должно работать быстро (< 1ms)
 
-# Проверка 2: Публичный интернет через VPN
+# Verification 2: Public интернет through VPN
 curl https://api.ipify.org
-# Должен показать IP VPN сервера
+# Должен показать VPN server IP
 
-# Проверка 3: Маршруты
+# Verification 3: Routes
 ip route show
-# Должны быть маршруты для 192.168.0.0/16 через gateway
+# Должны быть маршруты for 192.168.0.0/16 через gateway
 ```
 
 ---
 
-## Режимы работы
+## Operating Modes
 
-### Режим 1: Exclude (Исключение)
+### Mode 1: Exclude (Исключение)
 
-**Описание**: Весь трафик через VPN, **КРОМЕ** указанных сетей.
+**Description**: Весь трафик through VPN, **КРОМЕ** указанных сетей.
 
-**Когда использовать**:
+**When to use**:
 
-- Нужна защита для большинства трафика
+- Нужна защита for большинства трафика
 - Локальные устройства должны быть доступны
-- Определенные сервисы (Netflix) должны идти напрямую
+- Определенные сервисы (Netflix) должны идти directly
 
-**Конфигурация**:
+**Configuration**:
 
 ```yaml
 split_tunneling:
   enabled: true
   mode: "exclude"
   exclude_cidrs:
-    - "192.168.0.0/16" # Локальная сеть
-    - "10.0.0.0/8" # Корпоративная сеть
+    - "192.168.0.0/16" # Local network
+    - "10.0.0.0/8" # Corporate network
     - "185.60.216.0/22" # Netflix CDN (опционально)
 ```
 
@@ -173,17 +173,17 @@ google.com           | VPN (not excluded)
 
 ---
 
-### Режим 2: Include (Включение)
+### Mode 2: Include (Включение)
 
-**Описание**: Только указанные сети через VPN, **остальное** напрямую.
+**Description**: Только указанные сети through VPN, **остальное** directly.
 
-**Когда использовать**:
+**When to use**:
 
-- Нужна защита только для конкретных ресурсов
+- Нужна защита only for конкретных ресурсов
 - Экономия bandwidth VPN сервера
-- Минимальная нагрузка на VPN
+- Минимальная нагрузка on VPN
 
-**Конфигурация**:
+**Configuration**:
 
 ```yaml
 split_tunneling:
@@ -207,11 +207,11 @@ Destination          | Route
 
 ---
 
-## Примеры конфигурации
+## Examples конфигурации
 
-### Пример 1: Домашняя сеть + VPN
+### Example 1: Home network + VPN
 
-**Задача**: Доступ к локальным устройствам (принтер, NAS), остальное через VPN.
+**Task**: Access to локальным устройствам (принтер, NAS), остальное through VPN.
 
 ```yaml
 split_tunneling:
@@ -221,59 +221,59 @@ split_tunneling:
     # Локальная домашняя сеть
     - "192.168.0.0/16"
 
-    # Link-local (для mDNS, Bonjour)
+    # Link-local (for mDNS, Bonjour)
     - "169.254.0.0/16"
 
-    # Multicast (для DLNA, Chromecast)
+    # Multicast (for DLNA, Chromecast)
     - "224.0.0.0/4"
 ```
 
-**Результат**:
+**Result**:
 
 - ✅ Принтер (192.168.1.100) доступен
 - ✅ NAS (192.168.1.50) доступен
 - ✅ Chromecast работает
-- ✅ Интернет через VPN
+- ✅ Internet through VPN
 
 ---
 
-### Пример 2: Корпоративная сеть
+### Example 2: Corporate network
 
-**Задача**: Доступ к корпоративным ресурсам напрямую, остальное через VPN.
+**Task**: Access to корпоративным ресурсам directly, остальное through VPN.
 
 ```yaml
 split_tunneling:
   enabled: true
   mode: "exclude"
   exclude_cidrs:
-    # Корпоративная сеть
+    # Corporate network
     - "10.0.0.0/8"
 
-    # Локальная сеть офиса
+    # Local network офиса
     - "192.168.0.0/16"
 
-    # VPN корпоративный (если есть)
+    # VPN корпоративный (if есть)
     - "172.16.0.0/12"
 ```
 
-**Результат**:
+**Result**:
 
 - ✅ Корпоративные серверы (10.x.x.x) доступны
 - ✅ Локальные принтеры работают
-- ✅ Публичный интернет через VPN (защита)
+- ✅ Public интернет through VPN (защита)
 
 ---
 
-### Пример 3: Streaming + Privacy
+### Example 3: Streaming + Privacy
 
-**Задача**: Streaming сервисы напрямую (скорость), остальное через VPN (приватность).
+**Task**: Streaming сервисы directly (скорость), остальное through VPN (приватность).
 
 ```yaml
 split_tunneling:
   enabled: true
   mode: "exclude"
   exclude_cidrs:
-    # Локальная сеть
+    # Local network
     - "192.168.0.0/16"
 
     # Netflix CDN
@@ -288,18 +288,18 @@ split_tunneling:
     - "151.101.0.0/16"
 ```
 
-**Результат**:
+**Result**:
 
-- ✅ Netflix на полной скорости ISP
-- ✅ YouTube без буферизации
+- ✅ Netflix on полной скорости ISP
+- ✅ YouTube without буферизации
 - ✅ Twitch streams быстро
-- ✅ Остальной трафик через VPN
+- ✅ Остальной трафик through VPN
 
 ---
 
-### Пример 4: Selective Privacy (Include Mode)
+### Example 4: Selective Privacy (Include Mode)
 
-**Задача**: Только критичные сервисы через VPN, остальное напрямую.
+**Task**: Только критичные сервисы through VPN, остальное directly.
 
 ```yaml
 split_tunneling:
@@ -316,17 +316,17 @@ split_tunneling:
     - "104.16.0.0/12" # Cloudflare range
 ```
 
-**Результат**:
+**Result**:
 
-- ✅ Банкинг через VPN (защита)
-- ✅ Email через VPN (приватность)
-- ✅ Остальное напрямую (скорость)
+- ✅ Банкинг through VPN (защита)
+- ✅ Email through VPN (приватность)
+- ✅ Остальное directly (скорость)
 
 ---
 
-### Пример 5: Docker + Kubernetes
+### Example 5: Docker + Kubernetes
 
-**Задача**: Docker контейнеры и K8s pods не должны идти через VPN.
+**Task**: Docker контейнеры and K8s pods не должны идти through VPN.
 
 ```yaml
 split_tunneling:
@@ -347,29 +347,29 @@ split_tunneling:
     - "10.96.0.0/12"
 ```
 
-**Результат**:
+**Result**:
 
-- ✅ Docker контейнеры общаются напрямую
+- ✅ Docker контейнеры общаются directly
 - ✅ K8s pods доступны
-- ✅ Внешний трафик через VPN
+- ✅ Внешний трафик through VPN
 
 ---
 
-## Практические сценарии
+## Practical Scenarios
 
-### Сценарий 1: Работа из дома
+### Scenario 1: Работа from дома
 
-**Ситуация**:
+**Situation**:
 
 ```
-Вы работаете из дома, подключены к VPN для обхода блокировок.
-Но нужен доступ к:
+Вы работаете from дома, подключены to VPN for обхода блокировок.
+Но нужен доступ to:
 - Домашнему принтеру (192.168.1.100)
 - NAS серверу (192.168.1.50)
 - Smart TV (192.168.1.200)
 ```
 
-**Решение**:
+**Solution**:
 
 ```yaml
 split_tunneling:
@@ -379,7 +379,7 @@ split_tunneling:
     - "192.168.0.0/16" # Вся домашняя сеть
 ```
 
-**Проверка**:
+**Verification**:
 
 ```bash
 # Принтер доступен
@@ -387,23 +387,23 @@ ping 192.168.1.100
 # PING 192.168.1.100: 56 data bytes
 # 64 bytes from 192.168.1.100: icmp_seq=0 ttl=64 time=0.5 ms ✅
 
-# Интернет через VPN
+# Internet through VPN
 curl https://api.ipify.org
-# 203.0.113.45 (IP VPN сервера) ✅
+# 203.0.113.45 (VPN server IP) ✅
 ```
 
 ---
 
-### Сценарий 2: Gaming + VPN
+### Scenario 2: Gaming + VPN
 
-**Ситуация**:
+**Situation**:
 
 ```
-Вы играете в онлайн игры, но нужен VPN для доступа к заблокированным сайтам.
-Проблема: Игровые серверы медленные через VPN.
+Вы играете in онлайн игры, но нужен VPN for доступа to заблокированным сайтам.
+Issue: Игровые серверы медленные through VPN.
 ```
 
-**Решение**:
+**Solution**:
 
 ```yaml
 split_tunneling:
@@ -419,27 +419,27 @@ split_tunneling:
     # Battle.net
     - "24.105.0.0/16"
 
-    # Локальная сеть
+    # Local network
     - "192.168.0.0/16"
 ```
 
-**Результат**:
+**Result**:
 
-- ✅ Игры на низком ping (direct)
-- ✅ Веб-серфинг через VPN (защита)
+- ✅ Игры on низком ping (direct)
+- ✅ Веб-серфинг through VPN (защита)
 
 ---
 
-### Сценарий 3: Разработчик с Docker
+### Scenario 3: Разработчик with Docker
 
-**Ситуация**:
+**Situation**:
 
 ```
-Вы разработчик, используете Docker для локальной разработки.
-Docker контейнеры не должны идти через VPN (медленно).
+Вы разработчик, используете Docker for локальной разработки.
+Docker контейнеры не должны идти through VPN (медленно).
 ```
 
-**Решение**:
+**Solution**:
 
 ```yaml
 split_tunneling:
@@ -454,32 +454,32 @@ split_tunneling:
     # Localhost
     - "127.0.0.0/8"
 
-    # Локальная сеть
+    # Local network
     - "192.168.0.0/16"
 ```
 
-**Проверка**:
+**Verification**:
 
 ```bash
-# Docker контейнер доступен напрямую
+# Docker контейнер доступен directly
 docker run -d -p 8080:80 nginx
 curl http://localhost:8080
 # Быстрый ответ ✅
 
-# Внешний API через VPN
+# Внешний API through VPN
 curl https://api.github.com
-# Через VPN ✅
+# Through VPN ✅
 ```
 
 ---
 
-## Интеграция с другими функциями
+## Integration with Other Features
 
 ### Split Tunneling + Kill Switch
 
-**Вопрос**: Что происходит при разрыве VPN?
+**Вопрос**: Что происходит when разрыве VPN?
 
-**Ответ**: Kill Switch блокирует **только VPN трафик**, excluded маршруты продолжают работать.
+**Ответ**: Kill Switch блокирует **only VPN трафик**, excluded маршруты продолжают работать.
 
 **Поведение**:
 
@@ -499,7 +499,7 @@ connection:
 ```
 Destination          | Kill Switch Active | Доступность
 ---------------------|--------------------|--------------
-192.168.1.100        | Whitelisted        | ✅ Доступен
+192.168.1.100        | Whitelisted        | ✅ Available
 10.0.0.50            | Blocked            | ❌ Заблокирован
 8.8.8.8              | Blocked            | ❌ Заблокирован
 ```
@@ -508,21 +508,21 @@ Destination          | Kill Switch Active | Доступность
 
 1. VPN разрывается
 2. Kill Switch активируется
-3. Excluded CIDRs добавляются в whitelist Kill Switch
-4. Локальная сеть продолжает работать
-5. Публичный интернет заблокирован (защита IP)
+3. Excluded CIDRs добавляются in whitelist Kill Switch
+4. Local network продолжает работать
+5. Public интернет заблокирован (защита IP)
 
 ---
 
 ### Split Tunneling + DNS Protection
 
-**Вопрос**: Как работает DNS для excluded доменов?
+**Вопрос**: How it works DNS for excluded доменов?
 
-**Ответ**: **Все DNS запросы идут через VPN**, даже для excluded destinations.
+**Ответ**: **Все DNS запросы идут through VPN**, даже for excluded destinations.
 
 **Причина**: Предотвращение DNS leaks.
 
-**Пример**:
+**Example**:
 
 ```yaml
 split_tunneling:
@@ -538,21 +538,21 @@ connection:
 **Поведение**:
 
 ```
-1. Браузер запрашивает netflix.com
+1. Browser запрашивает netflix.com
 2. DNS запрос → VPN (защищено) ✅
 3. DNS ответ: 185.60.216.35
-4. Трафик к 185.60.216.35 → Direct (excluded) ✅
+4. Traffic to 185.60.216.35 → Direct (excluded) ✅
 ```
 
-**Результат**: DNS защищен, трафик быстрый.
+**Result**: DNS защищен, трафик быстрый.
 
 ---
 
 ### Split Tunneling + IPv6
 
-**Поддержка**: ✅ Полная
+**Support**: ✅ Полная
 
-**Конфигурация**:
+**Configuration**:
 
 ```yaml
 split_tunneling:
@@ -571,7 +571,7 @@ connection:
   enable_ipv6: true
 ```
 
-**Проверка**:
+**Verification**:
 
 ```bash
 # IPv4 локальная сеть
@@ -589,28 +589,28 @@ ping6 2001:4860:4860::8888
 
 ---
 
-## Мониторинг и отладка
+## Monitoring and Debugging
 
-### Проверка маршрутов
+### Verification маршрутов
 
 ```bash
-# Показать все маршруты
+# Показать all маршруты
 ip route show
 
-# Ожидаемый вывод (exclude mode):
+# Expected output (exclude mode):
 # 192.168.0.0/16 via 192.168.1.1 dev eth0  ← Excluded (direct)
 # 10.0.0.0/8 via 192.168.1.1 dev eth0      ← Excluded (direct)
 # 0.0.0.0/1 dev tun0                        ← VPN
 # 128.0.0.0/1 dev tun0                      ← VPN
 ```
 
-### Проверка IPv6 маршрутов
+### Verification IPv6 маршрутов
 
 ```bash
 # IPv6 маршруты
 ip -6 route show
 
-# Ожидаемый вывод:
+# Expected output:
 # fd00::/8 via fe80::1 dev eth0             ← Excluded (direct)
 # ::/1 dev tun0                             ← VPN
 # 8000::/1 dev tun0                         ← VPN
@@ -622,27 +622,27 @@ ip -6 route show
 # Все логи split tunneling
 sudo journalctl -u goxray | grep -i "split"
 
-# Ожидаемые сообщения:
+# Expected messages:
 # "Split tunnel router initialized" mode=exclude exclude_count=3
 # "Configuring exclude mode split tunneling"
 # "Added excluded route (direct)" route=192.168.0.0/16 gateway=192.168.1.1
 # "Exclude mode configured" excluded_routes=3
 ```
 
-### Тестирование маршрутизации
+### Testing маршрутизации
 
 ```bash
-# Тест 1: Локальная сеть (должна идти direct)
+# Тест 1: Local network (должна идти direct)
 traceroute 192.168.1.1
 # 1  192.168.1.1 (192.168.1.1)  0.5 ms ✅
 
-# Тест 2: Публичный интернет (должен идти через VPN)
+# Тест 2: Public интернет (should идти through VPN)
 traceroute 8.8.8.8
 # 1  192.18.0.1 (192.18.0.1)  1.2 ms  ← TUN device
 # 2  * * *
 # 3  <VPN server IP> ✅
 
-# Тест 3: Проверка IP адреса
+# Тест 3: Verification IP addresses
 curl https://api.ipify.org
 # <VPN server public IP> ✅
 ```
@@ -653,7 +653,7 @@ curl https://api.ipify.org
 # Получить метрики
 curl http://localhost:9090/metrics | grep split_tunnel
 
-# Ожидаемые метрики:
+# Expected metrics:
 # split_tunnel_routes_vpn_total 1234
 # split_tunnel_routes_direct_total 567
 # goxray_config_split_tunnel_enabled 1
@@ -663,34 +663,34 @@ curl http://localhost:9090/metrics | grep split_tunnel
 
 ## Troubleshooting
 
-### Проблема 1: Локальная сеть недоступна
+### Issue 1: Local network недоступна
 
-**Симптомы**:
+**Symptoms**:
 
 ```bash
 ping 192.168.1.1
 # Request timeout ❌
 ```
 
-**Диагностика**:
+**Diagnosis**:
 
 ```bash
-# Проверка 1: Split tunneling включен?
+# Verification 1: Split tunneling включен?
 grep "split_tunneling" /etc/goxray/config.yaml
 # enabled: true ✅
 
-# Проверка 2: Маршруты добавлены?
+# Verification 2: Routes добавлены?
 ip route show | grep 192.168
 # 192.168.0.0/16 via 192.168.1.1 dev eth0 ✅
 
-# Проверка 3: Логи
+# Verification 3: Логи
 sudo journalctl -u goxray | grep "excluded route"
 # "Added excluded route (direct)" route=192.168.0.0/16 ✅
 ```
 
-**Решение**:
+**Solution**:
 
-1. Проверьте CIDR в конфигурации:
+1. Проверьте CIDR in конфигурации:
 
    ```yaml
    exclude_cidrs:
@@ -704,28 +704,28 @@ sudo journalctl -u goxray | grep "excluded route"
 
 ---
 
-### Проблема 2: Весь трафик идет через VPN
+### Issue 2: Весь трафик идет through VPN
 
-**Симптомы**:
+**Symptoms**:
 
 ```bash
 traceroute 192.168.1.1
-# 1  192.18.0.1 (TUN device) ❌ Не должно быть
+# 1  192.18.0.1 (TUN device) ❌ Не should быть
 ```
 
-**Диагностика**:
+**Diagnosis**:
 
 ```bash
-# Проверка режима
+# Verification режима
 grep "mode:" /etc/goxray/config.yaml
 # mode: "exclude" ✅
 
-# Проверка маршрутов
+# Verification маршрутов
 ip route show | grep 192.168
-# (пусто) ❌ Маршруты не добавлены
+# (пусто) ❌ Routes не добавлены
 ```
 
-**Решение**:
+**Solution**:
 
 1. Проверьте валидность CIDR:
 
@@ -739,36 +739,36 @@ ip route show | grep 192.168
      - "192.168.0.0/16"  # Покрывает всю сеть
    ```
 
-2. Проверьте логи на ошибки:
+2. Проверьте логи on ошибки:
    ```bash
    sudo journalctl -u goxray | grep -i error
    ```
 
 ---
 
-### Проблема 3: Публичный интернет идет напрямую (не через VPN)
+### Issue 3: Public интернет идет directly (не through VPN)
 
-**Симптомы**:
+**Symptoms**:
 
 ```bash
 curl https://api.ipify.org
-# <Ваш реальный IP> ❌ Должен быть VPN IP
+# <Ваш real IP> ❌ Должен быть VPN IP
 ```
 
-**Диагностика**:
+**Diagnosis**:
 
 ```bash
-# Проверка 1: Не исключили ли вы 0.0.0.0/0?
+# Verification 1: Не исключили ли вы 0.0.0.0/0?
 grep "0.0.0.0" /etc/goxray/config.yaml
 # exclude_cidrs:
 #   - "0.0.0.0/0" ❌ ОШИБКА!
 
-# Проверка 2: Режим include с пустым списком?
+# Verification 2: Mode include with пустым списком?
 grep -A 5 "mode: \"include\"" /etc/goxray/config.yaml
 # include_cidrs: [] ❌ ОШИБКА!
 ```
 
-**Решение**:
+**Solution**:
 
 1. **Exclude mode**: Не исключайте 0.0.0.0/0
 
@@ -787,9 +787,9 @@ grep -A 5 "mode: \"include\"" /etc/goxray/config.yaml
 
 ---
 
-### Проблема 4: Kill Switch блокирует локальную сеть
+### Issue 4: Kill Switch блокирует локальную сеть
 
-**Симптомы**:
+**Symptoms**:
 
 ```bash
 # После разрыва VPN
@@ -797,28 +797,28 @@ ping 192.168.1.1
 # Request timeout ❌
 ```
 
-**Диагностика**:
+**Diagnosis**:
 
 ```bash
-# Проверка Kill Switch rules
+# Verification Kill Switch rules
 sudo iptables -L goxray_killswitch -n
 
-# Ожидаемый вывод:
+# Expected output:
 # Chain goxray_killswitch
 # ACCEPT  all  --  0.0.0.0/0  192.168.0.0/16  ← Должно быть!
 # ACCEPT  all  --  0.0.0.0/0  <XRAY_IP>
 # DROP    all  --  0.0.0.0/0  0.0.0.0/0
 ```
 
-**Решение**:
+**Solution**:
 
-Это автоматически обрабатывается в коде. Если не работает:
+Это автоматически обрабатывается in коде. Если не работает:
 
 1. Проверьте версию GoXRay:
 
    ```bash
    goxray --version
-   # v1.7.0 или выше ✅
+   # v1.7.0 or выше ✅
    ```
 
 2. Проверьте логи интеграции:
@@ -829,29 +829,29 @@ sudo iptables -L goxray_killswitch -n
 
 ---
 
-### Проблема 5: DNS leaks для excluded доменов
+### Issue 5: DNS leaks for excluded доменов
 
-**Симптомы**:
+**Symptoms**:
 
 ```bash
 # DNS запрос идет через ISP DNS
 nslookup netflix.com
-# Server: 192.168.1.1 ❌ Локальный DNS (leak!)
+# Server: 192.168.1.1 ❌ Local DNS (leak!)
 ```
 
-**Решение**:
+**Solution**:
 
-DNS Protection автоматически защищает все DNS запросы:
+DNS Protection автоматически защищает all DNS запросы:
 
 ```yaml
 connection:
   enable_dns_protection: true # ✅ Обязательно включите
 ```
 
-**Проверка**:
+**Verification**:
 
 ```bash
-# DNS должен идти через VPN
+# DNS should идти through VPN
 sudo tcpdump -i tun0 port 53
 # Должны видеть DNS пакеты ✅
 ```
@@ -862,16 +862,16 @@ sudo tcpdump -i tun0 port 53
 
 ### Q1: Можно ли использовать домены вместо IP?
 
-**A**: В Phase 1 (v1.7.0) - **только CIDR** (IP ranges).
+**A**: В Phase 1 (v1.7.0) - **only CIDR** (IP ranges).
 
-**Workaround**: Резолвите домен в IP и добавьте CIDR:
+**Workaround**: Резолвите домен in IP and добавьте CIDR:
 
 ```bash
 # Узнать IP диапазон Netflix
 nslookup netflix.com
 # 185.60.216.35
 
-# Добавить в конфиг
+# Add in конфиг
 exclude_cidrs:
   - "185.60.216.0/22"  # Netflix CDN range
 ```
@@ -879,7 +879,7 @@ exclude_cidrs:
 **Будущее**: Phase 2 (v1.8.0) добавит поддержку доменов:
 
 ```yaml
-# Планируется в v1.8.0
+# Планируется in v1.8.0
 exclude_domains:
   - "*.netflix.com"
   - "*.youtube.com"
@@ -887,46 +887,46 @@ exclude_domains:
 
 ---
 
-### Q2: Влияет ли Split Tunneling на скорость VPN?
+### Q2: Влияет ли Split Tunneling on скорость VPN?
 
 **A**: **Нет**, даже улучшает:
 
-- **Excluded трафик**: Быстрее (direct, без VPN overhead)
-- **VPN трафик**: Та же скорость, что и без split tunneling
+- **Excluded трафик**: Быстрее (direct, without VPN overhead)
+- **VPN трафик**: Та же скорость, что and without split tunneling
 - **Routing overhead**: < 1μs (negligible)
 
 **Benchmark**:
 
 ```
 Без Split Tunneling:
-  Локальная сеть: 50ms (через VPN)
-  Публичный интернет: 100ms (через VPN)
+  Local network: 50ms (through VPN)
+  Public интернет: 100ms (through VPN)
 
 Со Split Tunneling:
-  Локальная сеть: 0.5ms (direct) ✅ 100x быстрее
-  Публичный интернет: 100ms (через VPN) ✅ Без изменений
+  Local network: 0.5ms (direct) ✅ 100x быстрее
+  Public интернет: 100ms (through VPN) ✅ Без изменений
 ```
 
 ---
 
 ### Q3: Безопасно ли использовать Split Tunneling?
 
-**A**: **Да**, при правильной конфигурации:
+**A**: **Да**, when правильной конфигурации:
 
 ✅ **Безопасно**:
 
-- DNS всегда через VPN (защита от DNS leaks)
-- Kill Switch работает с excluded routes
-- Excluded трафик - только локальная сеть
+- DNS всегда through VPN (защита от DNS leaks)
+- Kill Switch работает with excluded routes
+- Excluded трафик - only локальная сеть
 
 ⚠️ **Риски**:
 
-- Если исключить публичные IP, они пойдут напрямую (без VPN)
-- Неправильная конфигурация может привести к IP leaks
+- Если исключить публичные IP, они пойдут directly (without VPN)
+- Неправильная конфигурация can привести to IP leaks
 
-**Рекомендации**:
+**Recommendations**:
 
-1. Исключайте только приватные сети (192.168.x.x, 10.x.x.x)
+1. Исключайте only приватные сети (192.168.x.x, 10.x.x.x)
 2. Включайте DNS Protection
 3. Включайте Kill Switch
 4. Проверяйте конфигурацию перед применением
@@ -937,12 +937,12 @@ exclude_domains:
 
 **A**: В Phase 1 (v1.7.0) - **нет**.
 
-**Workaround**: Исключите IP адреса, к которым обращается приложение.
+**Workaround**: Исключите IP addresses, to которым обращается приложение.
 
 **Будущее**: Phase 3 (v1.9.0) добавит per-application routing:
 
 ```yaml
-# Планируется в v1.9.0
+# Планируется in v1.9.0
 split_tunneling:
   exclude_applications:
     - "steam"
@@ -951,7 +951,7 @@ split_tunneling:
 
 ---
 
-### Q5: Работает ли Split Tunneling с IPv6?
+### Q5: Working ли Split Tunneling with IPv6?
 
 **A**: **Да**, полная поддержка IPv6:
 
@@ -968,7 +968,7 @@ split_tunneling:
     - "fe80::/10" # Link-local
 ```
 
-**Проверка**:
+**Verification**:
 
 ```bash
 # IPv6 маршруты
@@ -978,19 +978,19 @@ ip -6 route show | grep fd00
 
 ---
 
-### Q6: Что делать если конфигурация не валидна?
+### Q6: Что делать if конфигурация не валидна?
 
-**A**: GoXRay проверяет конфигурацию при старте:
+**A**: GoXRay проверяет конфигурацию when старте:
 
 ```bash
-# Запуск с невалидной конфигурацией
+# Запуск with невалидной конфигурацией
 sudo goxray --config config.yaml
 
-# Ошибка:
+# Error:
 # FATAL: invalid split tunnel mode: invalid (must be 'exclude', 'include', or 'disabled')
 ```
 
-**Решение**:
+**Solution**:
 
 1. Проверьте синтаксис YAML:
 
@@ -1041,16 +1041,16 @@ whois 185.60.216.35 | grep CIDR
 # - https://www.robtex.com/
 ```
 
-**Метод 3: Мониторинг трафика**
+**Метод 3: Monitoring трафика**
 
 ```bash
-# Запустить VPN
+# Start VPN
 sudo goxray --config config.yaml
 
 # Открыть сервис (например, Netflix)
 # В другом терминале:
 sudo tcpdump -i tun0 -n | grep -v "192.168"
-# Записать IP адреса, добавить в exclude_cidrs
+# Записать IP addresses, добавить in exclude_cidrs
 ```
 
 ---
@@ -1059,13 +1059,13 @@ sudo tcpdump -i tun0 -n | grep -v "192.168"
 
 ### Основные моменты
 
-1. ✅ **Split Tunneling** - мощный инструмент для гибкой маршрутизации
-2. ✅ **Exclude mode** - для большинства случаев (локальная сеть + VPN)
-3. ✅ **Include mode** - для минимальной нагрузки на VPN
-4. ✅ **Безопасность** - DNS Protection + Kill Switch работают вместе
-5. ✅ **Производительность** - Excluded трафик быстрее
+1. ✅ **Split Tunneling** - мощный инструмент for гибкой маршрутизации
+2. ✅ **Exclude mode** - for большинства случаев (локальная сеть + VPN)
+3. ✅ **Include mode** - for минимальной нагрузки on VPN
+4. ✅ **Security** - DNS Protection + Kill Switch работают вместе
+5. ✅ **Performance** - Excluded трафик быстрее
 
-### Рекомендации
+### Recommendations
 
 **Для домашнего использования**:
 
@@ -1098,7 +1098,7 @@ split_tunneling:
   enabled: true
   mode: "include"
   include_cidrs:
-    - "<только критичные IP>"
+    - "<only критичные IP>"
 ```
 
 ### Дополнительные ресурсы
@@ -1109,7 +1109,7 @@ split_tunneling:
 
 ---
 
-**Версия**: v1.7.0  
-**Статус**: ✅ Готово к использованию  
-**Поддержка**: Phase 1 (Route-Based CIDR)  
+**Version**: v1.7.0  
+**Статус**: ✅ Ready to использованию  
+**Support**: Phase 1 (Route-Based CIDR)  
 **Следующая фаза**: v1.8.0 (Domain-Based Routing)
