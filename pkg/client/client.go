@@ -336,10 +336,11 @@ func (c *Config) apply(new *Config) {
 type Client struct {
 	cfg Config
 
-	xInst  runnable
-	xCfg   *xrayproto.GeneralConfig
-	xSrvIP *net.IPAddr
-	tunnel io.ReadWriteCloser
+	xInst    runnable
+	xCfg     *xrayproto.GeneralConfig
+	xSrvIP   *net.IPAddr
+	xSrvPort string // Server port for connection cleanup during failover
+	tunnel   io.ReadWriteCloser
 	pipe   pipe
 	routes ipTable
 
@@ -671,6 +672,20 @@ func (c *Client) Disconnect(ctx context.Context) error {
 	// Close components individually with nil checks to prevent panics
 	var errs []error
 	
+	// CRITICAL: Kill stale connections BEFORE closing Xray/TUN.
+	// ss -K and iptables REJECT send RST packets that traverse the router,
+	// causing the router (e.g. MikroTik) to remove conntrack entries immediately.
+	// If we close Xray first, sockets are already gone and no RST is sent,
+	// leaving stale entries in the router's conntrack table until timeout.
+	if c.xSrvIP != nil {
+		ck := NewConnectionKiller(c.cfg.Logger)
+		if err := ck.KillConnectionsToServerWithTimeout(c.xSrvIP.IP, c.xSrvPort, 10*time.Second); err != nil {
+			c.cfg.Logger.Warn("Failed to kill stale connections to old server (continuing)", 
+				"server_ip", c.xSrvIP.String(), "error", err)
+			// Don't add to errs - this is best-effort cleanup
+		}
+	}
+	
 	if c.xInst != nil {
 		if err := c.xInst.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close xray: %w", err))
@@ -936,6 +951,7 @@ func (c *Client) createXrayProxy(link string) (xrayproto.Instance, *xrayproto.Ge
 		return nil, nil, fmt.Errorf("xray addresses not resolvable: %w", err)
 	}
 	c.xSrvIP = ip
+	c.xSrvPort = cfg.Port // Save port for connection cleanup during failover
 	
 	c.cfg.Logger.Info("Xray proxy created successfully", "protocol", protocolType, "server", cfg.Address+":"+cfg.Port)
 
