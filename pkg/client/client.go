@@ -336,10 +336,11 @@ func (c *Config) apply(new *Config) {
 type Client struct {
 	cfg Config
 
-	xInst  runnable
-	xCfg   *xrayproto.GeneralConfig
-	xSrvIP *net.IPAddr
-	tunnel io.ReadWriteCloser
+	xInst    runnable
+	xCfg     *xrayproto.GeneralConfig
+	xSrvIP   *net.IPAddr
+	xSrvPort string // Server port for connection cleanup during failover
+	tunnel   io.ReadWriteCloser
 	pipe   pipe
 	routes ipTable
 
@@ -683,6 +684,17 @@ func (c *Client) Disconnect(ctx context.Context) error {
 		}
 	}
 	
+	// CRITICAL: Kill stale connections to old VPN server to prevent conntrack overflow
+	// This must be done BEFORE route cleanup while we still know the server IP/port
+	if c.xSrvIP != nil {
+		ck := NewConnectionKiller(c.cfg.Logger)
+		if err := ck.KillConnectionsToServerWithTimeout(c.xSrvIP.IP, c.xSrvPort, 10*time.Second); err != nil {
+			c.cfg.Logger.Warn("Failed to kill stale connections to old server (continuing)", 
+				"server_ip", c.xSrvIP.String(), "error", err)
+			// Don't add to errs - this is best-effort cleanup
+		}
+	}
+	
 	// Clean up routes (ignore errors as they're not critical)
 	if routeOpts := c.xrayToGatewayRoute(); true {
 		if err := c.routes.Delete(routeOpts); err != nil {
@@ -936,6 +948,7 @@ func (c *Client) createXrayProxy(link string) (xrayproto.Instance, *xrayproto.Ge
 		return nil, nil, fmt.Errorf("xray addresses not resolvable: %w", err)
 	}
 	c.xSrvIP = ip
+	c.xSrvPort = cfg.Port // Save port for connection cleanup during failover
 	
 	c.cfg.Logger.Info("Xray proxy created successfully", "protocol", protocolType, "server", cfg.Address+":"+cfg.Port)
 
