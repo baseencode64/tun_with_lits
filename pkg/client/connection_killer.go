@@ -78,7 +78,7 @@ func (ck *ConnectionKiller) KillConnectionsToServer(serverIP net.IP, serverPort 
 
 	errMsg := fmt.Sprintf("all connection cleanup methods failed: %s", strings.Join(errors, "; "))
 	ck.logger.Warn(errMsg, "server_ip", ipStr)
-	return fmt.Errorf(errMsg)
+	return fmt.Errorf("%s", errMsg)
 }
 
 // killWithSS uses `ss -K` to kill TCP connections to the specified destination.

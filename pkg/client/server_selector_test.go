@@ -35,6 +35,18 @@ invalid-link
 			linkCount: 2,
 		},
 		{
+			name: "mixed vless and vmess list",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				vmess := buildVMessLink(t, map[string]string{
+					"v": "2", "add": "vmess.example.com", "port": "443",
+				})
+				w.Write([]byte("vless://uuid1@example.com:443\n" + vmess + "\ninvalid-link\n"))
+			},
+			expectErr: false,
+			linkCount: 2,
+		},
+		{
 			name: "empty list",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
@@ -150,6 +162,37 @@ func TestServerSelector_extractHostPort(t *testing.T) {
 		{
 			name:    "invalid - malformed",
 			link:    "not-a-url",
+			wantErr: true,
+		},
+		{
+			name:     "vmess standard",
+			link:     buildVMessLink(t, map[string]string{"v": "2", "add": "example.com", "port": "443"}),
+			wantHost: "example.com",
+			wantPort: "443",
+			wantErr:  false,
+		},
+		{
+			name:     "vmess custom port",
+			link:     buildVMessLink(t, map[string]string{"add": "test.org", "port": "8080"}),
+			wantHost: "test.org",
+			wantPort: "8080",
+			wantErr:  false,
+		},
+		{
+			name:     "vmess without port defaults to 443",
+			link:     buildVMessLink(t, map[string]string{"add": "example.com"}),
+			wantHost: "example.com",
+			wantPort: "443",
+			wantErr:  false,
+		},
+		{
+			name:    "vmess invalid base64",
+			link:    "vmess://not-valid-base64!!!",
+			wantErr: true,
+		},
+		{
+			name:    "vmess missing address",
+			link:    buildVMessLink(t, map[string]string{"port": "443"}),
 			wantErr: true,
 		},
 	}

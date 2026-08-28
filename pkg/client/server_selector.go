@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -349,13 +351,18 @@ func (s *ServerSelector) SelectBestFromURL(rawURL string) (*ServerInfo, error) {
 	return s.SelectBest(links)
 }
 
-// extractHostPort extracts hostname and port from VLESS link
+// extractHostPort extracts hostname and port from VLESS or VMess link
 func extractHostPort(link string) (string, string, error) {
 	link = strings.TrimSpace(link)
 
-	// Remove protocol prefix
+	// Handle VMess links (vmess://base64(JSON))
+	if strings.HasPrefix(link, "vmess://") {
+		return extractHostPortVMess(link)
+	}
+
+	// Handle VLESS links
 	if !strings.HasPrefix(link, "vless://") {
-		return "", "", fmt.Errorf("not a vless link")
+		return "", "", fmt.Errorf("not a vless or vmess link")
 	}
 
 	// Parse as URL
@@ -377,4 +384,49 @@ func extractHostPort(link string) (string, string, error) {
 	}
 
 	return host, port, nil
+}
+
+// extractHostPortVMess extracts hostname and port from a VMess link
+func extractHostPortVMess(link string) (string, string, error) {
+	payload := strings.TrimPrefix(link, "vmess://")
+	payload = strings.TrimSpace(payload)
+
+	if payload == "" {
+		return "", "", fmt.Errorf("empty vmess payload")
+	}
+
+	// Decode base64 with fallbacks
+	var decoded []byte
+	var err error
+
+	decoded, err = base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		decoded, err = base64.URLEncoding.DecodeString(payload)
+		if err != nil {
+			decoded, err = base64.RawStdEncoding.DecodeString(payload)
+			if err != nil {
+				return "", "", fmt.Errorf("decode vmess base64: %w", err)
+			}
+		}
+	}
+
+	// Parse JSON
+	var cfg struct {
+		Add  string `json:"add"`
+		Port string `json:"port"`
+	}
+	if err := json.Unmarshal(decoded, &cfg); err != nil {
+		return "", "", fmt.Errorf("parse vmess JSON: %w", err)
+	}
+
+	if cfg.Add == "" {
+		return "", "", fmt.Errorf("vmess link missing address")
+	}
+
+	if cfg.Port == "" {
+		// Default port for VMess is typically 443
+		cfg.Port = "443"
+	}
+
+	return cfg.Add, cfg.Port, nil
 }

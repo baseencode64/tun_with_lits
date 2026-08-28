@@ -4,7 +4,10 @@
 
 # Connection settings
 connection:
-  # Direct VLESS link (use EITHER this OR from_raw/from_raw_urls, not both)
+  # Direct VLESS or VMess link (use EITHER this OR from_raw/from_raw_urls, not both)
+  # Supported formats:
+  #   - VLESS:  "vless://uuid@hostname:443?type=ws&path=/path&security=tls&..."
+  #   - VMess:  "vmess://base64(JSON)" where JSON contains {"add":"host","port":"443","id":"uuid",...}
   # link: "vless://uuid@hostname:443?type=ws&path=/path&security=tls&..."
   
   # Single raw URL for server list (legacy, use from_raw_urls for multiple URLs)
