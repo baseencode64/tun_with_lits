@@ -159,7 +159,7 @@ func (s *Server) acceptLoop() {
 // handleConnection handles a single SOCKS5 connection
 func (s *Server) handleConnection(conn net.Conn) {
 	defer s.wg.Done()
-	defer conn.Close()
+	defer closeGracefully(conn)
 	
 	// Bound only the establishment phase (handshake, authentication and the
 	// CONNECT request) so that idle or stalled peers cannot hold a goroutine
@@ -189,6 +189,35 @@ func (s *Server) handleConnection(conn net.Conn) {
 		s.logger.Warn("Request processing failed", "error", err, "remote", conn.RemoteAddr())
 		return
 	}
+}
+
+// closeDrainTimeout bounds how long closeGracefully waits for the peer to stop
+// sending before the socket is torn down. It only needs to cover a request the
+// server deliberately stopped parsing halfway through.
+const closeDrainTimeout = 250 * time.Millisecond
+
+// closeGracefully shuts conn down so that whatever the server already wrote is
+// guaranteed to reach the peer.
+//
+// Closing a socket that still holds unread received data makes TCP send a RST
+// rather than a FIN (RFC 1122 section 4.2.2.13), and that RST discards data
+// already queued at the peer. The failure paths reply and return without
+// consuming the rest of the request - for an unsupported command or address
+// type the server cannot even know how many octets remain - so a plain Close
+// would swallow the reply and the client would only observe a connection reset.
+// Draining first lets the connection end with a FIN instead.
+func closeGracefully(conn net.Conn) {
+	// Signal the peer that no more data will be sent. The read side stays open.
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		_ = tcpConn.CloseWrite()
+	}
+	
+	// Absorb anything already buffered. The deadline keeps a peer that never
+	// closes its side from stalling shutdown, which Stop waits for.
+	_ = conn.SetDeadline(time.Now().Add(closeDrainTimeout))
+	_, _ = io.Copy(io.Discard, conn)
+	
+	_ = conn.Close()
 }
 
 // handshake performs SOCKS5 handshake
@@ -322,6 +351,16 @@ func (s *Server) processRequest(conn net.Conn) error {
 		return fmt.Errorf("unsupported command: %d", cmd)
 	}
 	
+	// Reject address types this implementation cannot parse with the dedicated
+	// reply code mandated by RFC 1928 section 6, rather than the generic failure,
+	// so that clients can distinguish a malformed request from a transport error.
+	switch addrType {
+	case addrIPv4, addrDomain, addrIPv6:
+	default:
+		s.sendReply(conn, replyAddressNotSupported, addrType)
+		return fmt.Errorf("unsupported address type: %#x", addrType)
+	}
+	
 	// Read destination address
 	destAddr, err := s.readAddress(conn, addrType)
 	if err != nil {
@@ -424,21 +463,37 @@ func (s *Server) readAddress(conn net.Conn, addrType byte) (string, error) {
 	}
 }
 
-// sendReply sends SOCKS5 reply
+// sendReply sends a SOCKS5 reply.
+//
+// BND.ADDR and BND.PORT report the address the server bound to. This
+// implementation never binds a particular address for CONNECT, so a
+// placeholder is reported instead. The ATYP octet must always agree with the
+// number of address octets that follow it: the previous version echoed the
+// ATYP requested by the client but only appended address bytes for IPv4 and
+// IPv6, so domain-name requests produced a truncated 6-octet reply that
+// clients could not parse. Domain and unknown address types are therefore
+// reported in the fixed-width IPv4 form.
 func (s *Server) sendReply(conn net.Conn, reply byte, addrType byte) error {
+	// Only IPv6 keeps its own address family; IPv4, domain-name and unknown
+	// address types are all reported as the 4-octet IPv4 placeholder.
+	boundAddrType := addrType
+	if boundAddrType != addrIPv6 {
+		boundAddrType = addrIPv4
+	}
+	
 	// Build reply: VER REP RSV ATYP BND.ADDR BND.PORT
 	resp := []byte{
 		socks5Version,
 		reply,
 		0x00, // Reserved
-		addrType,
+		boundAddrType,
 	}
 	
-	// Add bind address (0.0.0.0:0 for simplicity)
-	if addrType == addrIPv4 {
-		resp = append(resp, 0, 0, 0, 0) // 0.0.0.0
-	} else if addrType == addrIPv6 {
-		resp = append(resp, make([]byte, 16)...) // ::
+	// Add bind address (0.0.0.0 or :: for simplicity)
+	if boundAddrType == addrIPv6 {
+		resp = append(resp, make([]byte, net.IPv6len)...) // ::
+	} else {
+		resp = append(resp, make([]byte, net.IPv4len)...) // 0.0.0.0
 	}
 	
 	// Add bind port (0)
