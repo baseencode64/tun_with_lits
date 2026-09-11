@@ -161,7 +161,10 @@ func (s *Server) handleConnection(conn net.Conn) {
 	defer s.wg.Done()
 	defer conn.Close()
 	
-	// Set connection timeout
+	// Bound only the establishment phase (handshake, authentication and the
+	// CONNECT request) so that idle or stalled peers cannot hold a goroutine
+	// indefinitely. The deadline is lifted in processRequest once the tunnel is
+	// established and payload relaying begins.
 	if err := conn.SetDeadline(time.Now().Add(s.config.Timeout)); err != nil {
 		s.logger.Error("Failed to set connection deadline", "error", err)
 		return
@@ -344,8 +347,16 @@ func (s *Server) processRequest(conn net.Conn) error {
 	
 	s.logger.Info("SOCKS5 connection established", "destination", destAddr, "remote", conn.RemoteAddr())
 	
+	// Lift the establishment deadline before relaying payload. config.Timeout
+	// bounds connection setup only; leaving it armed would tear every proxied
+	// connection down Timeout seconds after it was accepted, breaking long-lived
+	// streams such as video playback, SSH sessions or large downloads.
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		s.logger.Warn("Failed to clear connection deadline", "error", err)
+	}
+	
 	// Relay data between client and destination
-	s.relay(conn, destConn)
+	s.relay(s.ctx, conn, destConn)
 	
 	return nil
 }
@@ -438,7 +449,22 @@ func (s *Server) sendReply(conn net.Conn, reply byte, addrType byte) error {
 }
 
 // relay relays data between two connections
-func (s *Server) relay(client, dest net.Conn) {
+func (s *Server) relay(ctx context.Context, client, dest net.Conn) {
+	// Relays are no longer bounded by a deadline, so make them interruptible.
+	// Closing either endpoint unblocks the io.Copy running in the opposite
+	// direction, which lets Stop() return promptly instead of waiting on peers
+	// that never close their side.
+	watcherDone := make(chan struct{})
+	defer close(watcherDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			client.Close()
+			dest.Close()
+		case <-watcherDone:
+		}
+	}()
+	
 	var wg sync.WaitGroup
 	wg.Add(2)
 	
